@@ -262,14 +262,23 @@ class ShopifyThemeInjector
     protected function getAsset(Store $store, string $key): array
     {
         $theme = $this->getPublishedTheme($store);
-        $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/themes/{$theme['id']}/assets.json?asset[key]={$key}";
+        $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/themes/{$theme['id']}/assets.json";
 
-        $response = $this->request($store, 'GET', $endpoint);
+        // Usa array de query params para garantir codificação correta de asset[key].
+        $response = $this->request($store, 'GET', $endpoint, null, [
+            'asset' => ['key' => $key],
+        ]);
 
         $body = $response->json();
 
-        if (!isset($body['asset'])) {
-            throw new \RuntimeException("Asset {$key} não encontrado no tema.");
+        if (empty($body['asset'])) {
+            Log::warning('Shopify asset não encontrado', [
+                'store_id' => $store->id,
+                'theme_id' => $theme['id'] ?? null,
+                'key' => $key,
+                'body' => $body,
+            ]);
+            throw new \RuntimeException("Asset {$key} não encontrado no tema publicado.", 404);
         }
 
         return $body;
@@ -278,9 +287,11 @@ class ShopifyThemeInjector
     protected function deleteAsset(Store $store, string $key): void
     {
         $theme = $this->getPublishedTheme($store);
-        $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/themes/{$theme['id']}/assets.json?asset[key]=" . urlencode($key);
+        $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/themes/{$theme['id']}/assets.json";
 
-        $this->request($store, 'DELETE', $endpoint);
+        $this->request($store, 'DELETE', $endpoint, null, [
+            'asset' => ['key' => $key],
+        ]);
     }
 
     /**
@@ -288,11 +299,22 @@ class ShopifyThemeInjector
      *
      * @throws \RuntimeException para 401/403/404/5xx com mensagem útil.
      */
-    protected function request(Store $store, string $method, string $endpoint, ?array $body = null): \Illuminate\Http\Client\Response
-    {
-        $response = Http::withHeaders([
+    protected function request(
+        Store $store,
+        string $method,
+        string $endpoint,
+        ?array $body = null,
+        ?array $query = null
+    ): \Illuminate\Http\Client\Response {
+        $client = Http::withHeaders([
             'X-Shopify-Access-Token' => $store->shopify_access_token,
-        ])->{strtolower($method)}($endpoint, $body ?? []);
+        ]);
+
+        if ($query) {
+            $client = $client->withQueryParameters($query);
+        }
+
+        $response = $client->{strtolower($method)}($endpoint, $body ?? []);
 
         if (!$response->successful()) {
             $status = $response->status();
