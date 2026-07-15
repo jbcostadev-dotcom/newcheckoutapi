@@ -40,7 +40,7 @@ return [
         'client_id' => env('SHOPIFY_CLIENT_ID'),
         'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
         'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders'),
-        'redirect_uri' => env('APP_URL') . '/api/shopify/callback',
+        'redirect_uri' => rtrim(env('APP_URL', 'https://' . env('API_DOMAIN', 'api.bersenker.shop')), '/') . '/api/shopify/callback',
     ],
 
     // ── SuitPay ───────────────────────────────────────────────────────

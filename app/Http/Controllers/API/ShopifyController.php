@@ -49,10 +49,14 @@ class ShopifyController extends Controller
 
         $shop = $request->shop;
         $storeId = $request->store_id;
-        $clientId = env('SHOPIFY_CLIENT_ID');
-        $scopes = 'read_products,read_orders';
-        $redirectUri = urlencode(env('APP_URL') . '/api/shopify/callback');
-        
+        $clientId = config('services.shopify.client_id');
+        $redirectUri = urlencode(config('services.shopify.redirect_uri'));
+        $scopes = config('services.shopify.scopes', 'read_products,read_orders');
+
+        if (!$clientId) {
+            return response()->json(['error' => 'Shopify Client ID não configurado.'], 500);
+        }
+
         // Armazena o store_id na sessão (ou passa via state para recuperar no callback)
         $state = base64_encode(json_encode(['store_id' => $storeId]));
 
@@ -73,8 +77,8 @@ class ShopifyController extends Controller
         }
 
         $response = Http::post("https://{$shop}/admin/oauth/access_token", [
-            'client_id' => env('SHOPIFY_CLIENT_ID'),
-            'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
+            'client_id' => config('services.shopify.client_id'),
+            'client_secret' => config('services.shopify.client_secret'),
             'code' => $code,
         ]);
 
