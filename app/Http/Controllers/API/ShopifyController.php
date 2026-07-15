@@ -4,9 +4,12 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Store;
+use App\Services\ShopifyThemeInjector;
+use App\Services\CheckoutUrlGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Jobs\SyncShopifyProducts;
+use App\Jobs\InjectShopifyCheckout;
 
 class ShopifyController extends Controller
 {
@@ -21,6 +24,9 @@ class ShopifyController extends Controller
             'connected' => $store->isShopifyConnected(),
             'shopify_domain' => $store->shopify_domain,
             'credentials_configured' => !empty($store->shopify_client_id) && !empty($store->shopify_client_secret),
+            'checkout_injected' => !empty($store->shopify_injected_theme_id),
+            'injected_theme_id' => $store->shopify_injected_theme_id,
+            'injected_at' => $store->shopify_injected_at,
         ]);
     }
 
@@ -66,6 +72,59 @@ class ShopifyController extends Controller
     }
 
     /**
+     * Injeta (ou reinjeta) o snippet de checkout no tema publicado.
+     * Síncrono para feedback imediato no painel — usado pelo botão "Integrar/Reintegrar".
+     */
+    public function injectCheckout(Request $request, ShopifyThemeInjector $injector, string $storeId)
+    {
+        $store = $request->user()->stores()->findOrFail($storeId);
+
+        if (!$store->isShopifyConnected()) {
+            return response()->json(['error' => 'Shopify não está conectado para esta loja.'], 400);
+        }
+
+        try {
+            $result = $injector->inject($store);
+        } catch (\Throwable $e) {
+            $status = (int) $e->getCode();
+            $httpStatus = in_array($status, [401, 403, 404, 422, 429], true) ? $status : 502;
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], $httpStatus);
+        }
+
+        return response()->json([
+            'message' => 'Código de checkout injetado no tema com sucesso.',
+            'injected' => true,
+            'theme_id' => $result['theme_id'],
+            'theme_name' => $result['theme_name'],
+        ]);
+    }
+
+    /**
+     * Remove o snippet de checkout do tema publicado.
+     */
+    public function removeCheckout(Request $request, ShopifyThemeInjector $injector, string $storeId)
+    {
+        $store = $request->user()->stores()->findOrFail($storeId);
+
+        if (!$store->isShopifyConnected()) {
+            return response()->json(['error' => 'Shopify não está conectado para esta loja.'], 400);
+        }
+
+        try {
+            $injector->remove($store);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 502);
+        }
+
+        return response()->json([
+            'message' => 'Código de checkout removido do tema.',
+            'injected' => false,
+        ]);
+    }
+
+    /**
      * Inicia o OAuth usando as credenciais do app Shopifypertencentes à loja.
      *
      * Query: shop (domínio myshopify), store_id
@@ -91,7 +150,7 @@ class ShopifyController extends Controller
 
         // redirect_uri é fixo e único por plataforma (deve estar na whitelist do app do lojista).
         $redirectUri = urlencode(config('services.shopify.redirect_uri'));
-        $scopes = config('services.shopify.scopes', 'read_products,read_orders');
+        $scopes = config('services.shopify.scopes', 'read_products,read_orders,write_themes');
 
         // state carrega o store_id para o callback resolver a loja e suas credenciais.
         $state = base64_encode(json_encode(['store_id' => $storeId]));
@@ -141,6 +200,8 @@ class ShopifyController extends Controller
             ]);
 
             SyncShopifyProducts::dispatch($store);
+            // Injeta o snippet no tema publicado em paralelo (best-effort).
+            InjectShopifyCheckout::dispatch($store);
 
             return response()->json([
                 'message' => 'Shopify successfully connected and products are being synced.',
@@ -152,5 +213,83 @@ class ShopifyController extends Controller
             'error' => 'Failed to obtain access token',
             'details' => $response->json(),
         ], 502);
+    }
+
+    /**
+     * Endpoint público chamado pelo snippet injetado no tema.
+     * Recebe os itens do carrinho da Shopify e devolve a URL do nosso checkout.
+     *
+     * Itens cuja variante não esteja mapeada/atíva são ignorados (skipped).
+     */
+    public function checkoutRedirect(Request $request, CheckoutUrlGenerator $urlGenerator)
+    {
+        $validated = $request->validate([
+            'shop' => 'required|string',
+            'items' => 'required|array|min:1',
+            'items.*.variant_id' => 'required',
+            'items.*.quantity' => 'nullable|integer|min:1',
+        ]);
+
+        $shop = $validated['shop'];
+
+        // Aceita "loja.myshopify.com" ou apenas "loja".
+        $shopDomain = $shop;
+        if (!str_contains($shop, '.')) {
+            $shopDomain = $shop . '.myshopify.com';
+        }
+
+        $store = Store::where('shopify_domain', $shopDomain)
+            ->where('status', true)
+            ->first();
+
+        if (!$store) {
+            return response()->json(['error' => 'Loja não encontrada para este domínio Shopify.'], 404);
+        }
+
+        // Mapeia variant_id → product.id interno (somente ativos).
+        $variantIds = array_map(fn ($item) => (string) $item['variant_id'], $validated['items']);
+
+        $products = $store->products()
+            ->whereIn('shopify_variant_id', $variantIds)
+            ->where('is_active', true)
+            ->get(['id', 'shopify_variant_id'])
+            ->keyBy('shopify_variant_id');
+
+        if ($products->isEmpty()) {
+            return response()->json([
+                'error' => 'Nenhum dos produtos do carrinho está disponível no checkout.',
+            ], 404);
+        }
+
+        // Monta a lista de IDs internos preservando quantidade (repetições).
+        $productIds = [];
+        $skipped = [];
+        foreach ($validated['items'] as $item) {
+            $variantId = (string) $item['variant_id'];
+            $qty = max(1, (int) ($item['quantity'] ?? 1));
+            $product = $products->get($variantId);
+
+            if (!$product) {
+                $skipped[] = ['variant_id' => $variantId, 'quantity' => $qty];
+                continue;
+            }
+
+            for ($i = 0; $i < $qty; $i++) {
+                $productIds[] = (int) $product->id;
+            }
+        }
+
+        if (empty($productIds)) {
+            return response()->json([
+                'error' => 'Nenhum produto do carrinho pôde ser redirecionado.',
+            ], 404);
+        }
+
+        $redirectUrl = $urlGenerator->generateForCart($store, $productIds);
+
+        return response()->json([
+            'redirect_url' => $redirectUrl,
+            'skipped' => $skipped,
+        ]);
     }
 }

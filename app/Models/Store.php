@@ -15,11 +15,15 @@ class Store extends Model
         'shopify_access_token',
         'shopify_client_id',
         'shopify_client_secret',
+        'shopify_injected_theme_id',
+        'shopify_injected_at',
         'status',
     ];
 
     protected $casts = [
         'status' => 'boolean',
+        'shopify_injected_theme_id' => 'integer',
+        'shopify_injected_at' => 'datetime',
     ];
 
     protected $hidden = [

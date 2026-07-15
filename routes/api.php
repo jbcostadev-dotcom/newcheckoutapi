@@ -29,6 +29,9 @@ Route::get('/checkout', [CheckoutController::class, 'show']);
 Route::post('/checkout/process', [PaymentController::class, 'process']);
 Route::post('/webhook/suitpay', [PaymentController::class, 'webhook']);
 
+// Shopify checkout redirect (público — chamado pelo snippet injetado no tema)
+Route::post('/shopify/checkout-redirect', [ShopifyController::class, 'checkoutRedirect']);
+
 // SSL validation — público (consultado pelo Caddy On-Demand TLS)
 Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
 
@@ -68,6 +71,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('stores/{store}/shopify/status', [ShopifyController::class, 'status']);
     Route::put('stores/{store}/shopify/credentials', [ShopifyController::class, 'updateCredentials']);
     Route::post('stores/{store}/shopify/sync', [ShopifyController::class, 'sync']);
+
+    // Shopify — injeção do snippet de checkout no tema
+    Route::post('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'injectCheckout']);
+    Route::delete('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'removeCheckout']);
 
     // Domains (CRUD + verificação DNS + ativação)
     Route::get('stores/{store}/domains', [DomainController::class, 'index']);
