@@ -8,6 +8,7 @@ use App\Services\ShopifyThemeInjector;
 use App\Services\CheckoutUrlGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Jobs\SyncShopifyProducts;
 use App\Jobs\InjectShopifyCheckout;
 
@@ -80,7 +81,7 @@ class ShopifyController extends Controller
         $store = $request->user()->stores()->findOrFail($storeId);
 
         if (!$store->isShopifyConnected()) {
-            return response()->json(['error' => 'Shopify não está conectado para esta loja.'], 400);
+            return response()->json(['message' => 'Shopify não está conectado para esta loja.'], 400);
         }
 
         try {
@@ -88,8 +89,20 @@ class ShopifyController extends Controller
         } catch (\Throwable $e) {
             $status = (int) $e->getCode();
             $httpStatus = in_array($status, [401, 403, 404, 422, 429], true) ? $status : 502;
+
+            Log::warning('Falha na injeção do snippet Shopify', [
+                'store_id' => $store->id,
+                'shopify_domain' => $store->shopify_domain,
+                'status' => $status,
+                'message' => $e->getMessage(),
+            ]);
+
+            $message = $this->mapShopifyError($status, $e->getMessage());
+
             return response()->json([
+                'message' => $message,
                 'error' => $e->getMessage(),
+                'status' => $status,
             ], $httpStatus);
         }
 
@@ -109,13 +122,16 @@ class ShopifyController extends Controller
         $store = $request->user()->stores()->findOrFail($storeId);
 
         if (!$store->isShopifyConnected()) {
-            return response()->json(['error' => 'Shopify não está conectado para esta loja.'], 400);
+            return response()->json(['message' => 'Shopify não está conectado para esta loja.'], 400);
         }
 
         try {
             $injector->remove($store);
         } catch (\Throwable $e) {
-            return response()->json(['error' => $e->getMessage()], 502);
+            return response()->json([
+                'message' => $e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 502);
         }
 
         return response()->json([
@@ -243,7 +259,7 @@ class ShopifyController extends Controller
             ->first();
 
         if (!$store) {
-            return response()->json(['error' => 'Loja não encontrada para este domínio Shopify.'], 404);
+            return response()->json(['message' => 'Loja não encontrada para este domínio Shopify.'], 404);
         }
 
         // Mapeia variant_id → product.id interno (somente ativos).
@@ -257,7 +273,7 @@ class ShopifyController extends Controller
 
         if ($products->isEmpty()) {
             return response()->json([
-                'error' => 'Nenhum dos produtos do carrinho está disponível no checkout.',
+                'message' => 'Nenhum dos produtos do carrinho está disponível no checkout.',
             ], 404);
         }
 
@@ -281,7 +297,7 @@ class ShopifyController extends Controller
 
         if (empty($productIds)) {
             return response()->json([
-                'error' => 'Nenhum produto do carrinho pôde ser redirecionado.',
+                'message' => 'Nenhum produto do carrinho pôde ser redirecionado.',
             ], 404);
         }
 
@@ -291,5 +307,23 @@ class ShopifyController extends Controller
             'redirect_url' => $redirectUrl,
             'skipped' => $skipped,
         ]);
+    }
+
+    /**
+     * Traduz códigos de erro da Shopify em mensagens amigáveis para o painel.
+     */
+    protected function mapShopifyError(int $status, string $original): string
+    {
+        return match (true) {
+            $status === 401 || $status === 403 =>
+                'Permissão negada pela Shopify. Desconecte e reconecte a loja para conceder o escopo de edição de tema (write_themes).',
+            $status === 422 =>
+                'A Shopify rejeitou a alteração do tema. Verifique se o tema publicado permite edição e se o escopo write_themes foi concedido.',
+            $status === 429 =>
+                'Muitas requisições à Shopify. Aguarde alguns segundos e tente novamente.',
+            $status === 404 =>
+                'Tema ou recurso não encontrado na Shopify.',
+            default => $original ?: 'Falha ao comunicar com a Shopify.',
+        };
     }
 }

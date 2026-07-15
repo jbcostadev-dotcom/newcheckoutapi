@@ -295,10 +295,12 @@ class ShopifyThemeInjector
         if (!$response->successful()) {
             $status = $response->status();
             $payload = $response->json();
+            $bodyPreview = $response->body();
 
             $message = match (true) {
                 $status === 401 || $status === 403 => 'A Shopify rejeitou a operação (escopo write_themes ausente ou token inválido). Reconnecte a loja.',
                 $status === 404 => 'Recurso não encontrado na Shopify.',
+                $status === 422 => 'A Shopify rejeitou a alteração do tema: ' . $this->extractShopifyError($payload, $bodyPreview),
                 $status === 429 => 'Limite de requisições atingido na Shopify. Tente novamente em instantes.',
                 $status >= 500 => 'Erro no servidor da Shopify.',
                 default => 'Falha na API da Shopify.',
@@ -310,12 +312,26 @@ class ShopifyThemeInjector
                 'endpoint' => $endpoint,
                 'status' => $status,
                 'payload' => $payload,
+                'body_preview' => substr($bodyPreview, 0, 2000),
             ]);
 
             throw new \RuntimeException($message, $status);
         }
 
         return $response;
+    }
+
+    /**
+     * Extrai a mensagem de erro mais útil do payload da Shopify.
+     */
+    protected function extractShopifyError(?array $payload, string $body): string
+    {
+        if (!empty($payload['errors'])) {
+            $errors = $payload['errors'];
+            if (is_string($errors)) return $errors;
+            if (is_array($errors)) return json_encode($errors, JSON_UNESCAPED_UNICODE);
+        }
+        return substr($body, 0, 200);
     }
 
     /**
