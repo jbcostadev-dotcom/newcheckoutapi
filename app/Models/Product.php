@@ -9,11 +9,13 @@ class Product extends Model
     protected $fillable = [
         'store_id',
         'shopify_product_id',
+        'shopify_variant_id',
         'name',
         'description',
         'price',
         'compare_at_price',
         'image_url',
+        'checkout_url',
         'is_active',
     ];
 
@@ -28,8 +30,8 @@ class Product extends Model
         return $this->belongsTo(Store::class);
     }
 
-    public function orders()
+    public function orderItems()
     {
-        return $this->hasMany(Order::class);
+        return $this->hasMany(OrderItem::class);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\Product;
+use App\Services\CheckoutUrlGenerator;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
@@ -41,7 +42,12 @@ class ProductController extends Controller
 
         $product = $store->products()->create($validated);
 
-        return response()->json($product, 201);
+        // Gera o link direto de checkout pós-create (precisa do ID).
+        $product->update([
+            'checkout_url' => app(CheckoutUrlGenerator::class)->generate($store, (int) $product->id),
+        ]);
+
+        return response()->json($product->fresh(), 201);
     }
 
     /**

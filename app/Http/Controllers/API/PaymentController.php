@@ -5,18 +5,25 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\Order;
+use App\Models\OrderItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
     /**
-     * Process a checkout payment request.
+     * Processa um checkout com 1 ou N produtos.
+     *
+     * Payload:
+     *   domain, items: [{product_id, qty}], customer_*, payment_method
      */
     public function process(Request $request)
     {
         $validated = $request->validate([
             'domain' => 'required|string',
-            'product_id' => 'required|integer',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|integer',
+            'items.*.qty' => 'nullable|integer|min:1',
             'customer_name' => 'required|string',
             'customer_email' => 'required|email',
             'customer_document' => 'nullable|string',
@@ -30,25 +37,74 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
 
-        $product = $store->products()->findOrFail($validated['product_id']);
         $gateway = $store->gateways()->where('provider', 'suitpay')->first();
-
         if (!$gateway || !$gateway->api_key) {
             return response()->json(['error' => 'Gateway not configured'], 400);
         }
 
-        // Criar o pedido local como pending
-        $order = Order::create([
-            'store_id' => $store->id,
-            'product_id' => $product->id,
-            'customer_name' => $validated['customer_name'],
-            'customer_email' => $validated['customer_email'],
-            'customer_document' => $validated['customer_document'] ?? null,
-            'customer_phone' => $validated['customer_phone'] ?? null,
-            'amount' => $product->price,
-            'payment_method' => $validated['payment_method'],
-            'status' => 'pending',
-        ]);
+        // Agrupa itens por product_id somando qty (defensivo contra duplicação).
+        $grouped = [];
+        foreach ($validated['items'] as $item) {
+            $pid = (int) $item['product_id'];
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+            if (isset($grouped[$pid])) {
+                $grouped[$pid] += $qty;
+            } else {
+                $grouped[$pid] = $qty;
+            }
+        }
+
+        $productIds = array_keys($grouped);
+        $products = $store->products()
+            ->whereIn('id', $productIds)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('id');
+
+        if ($products->isEmpty()) {
+            return response()->json(['error' => 'No active products found'], 404);
+        }
+
+        // Calcula total e monta lista de itens com snapshot.
+        $orderItemsData = [];
+        $total = 0.0;
+
+        foreach ($grouped as $pid => $qty) {
+            $product = $products->get($pid);
+            if (!$product) {
+                return response()->json(['error' => "Product {$pid} not found or inactive"], 404);
+            }
+            $unitPrice = (float) $product->price;
+            $orderItemsData[] = [
+                'product_id' => $product->id,
+                'name' => $product->name,
+                'unit_price' => $unitPrice,
+                'qty' => $qty,
+            ];
+            $total += $unitPrice * $qty;
+        }
+
+        $total = round($total, 2);
+
+        // Cria pedido + itens em transação (atomicidade).
+        $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $total) {
+            $order = Order::create([
+                'store_id' => $store->id,
+                'customer_name' => $validated['customer_name'],
+                'customer_email' => $validated['customer_email'],
+                'customer_document' => $validated['customer_document'] ?? null,
+                'customer_phone' => $validated['customer_phone'] ?? null,
+                'amount' => $total,
+                'payment_method' => $validated['payment_method'],
+                'status' => 'pending',
+            ]);
+
+            foreach ($orderItemsData as $itemData) {
+                $order->items()->create($itemData);
+            }
+
+            return $order;
+        });
 
         // Simulação da integração Suitpay (Mock para ambiente de desenvolvimento)
         // TODO: Substituir por chamada HTTP real à API da Suitpay.

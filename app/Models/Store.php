@@ -69,6 +69,21 @@ class Store extends Model
     }
 
     /**
+     * Regenera o checkout_url de todos os produtos da loja.
+     * Chamado quando subdomain/custom_domain mudam.
+     */
+    public function regenerateProductUrls(): void
+    {
+        $generator = app(\App\Services\CheckoutUrlGenerator::class);
+
+        foreach ($this->products as $product) {
+            $product->update([
+                'checkout_url' => $generator->generate($this, (int) $product->id),
+            ]);
+        }
+    }
+
+    /**
      * Resolve uma loja pelo identificador de domínio.
      * Aceita: subdomínio, custom_domain, ou entrada na tabela domains.
      * Retorna null se não encontrar ou se a loja estiver inativa.

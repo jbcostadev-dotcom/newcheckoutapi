@@ -143,6 +143,9 @@ class DomainController extends Controller
             'custom_domain' => $domain->domain,
         ]);
 
+        // Regenera o checkout_url de todos os produtos (domínio mudou).
+        $store->regenerateProductUrls();
+
         return response()->json([
             'message' => "Domínio {$domain->domain} ativado com sucesso.",
             'domain' => $domain,
@@ -167,6 +170,8 @@ class DomainController extends Controller
         // Remove o custom_domain da loja se for o mesmo
         if ($store->custom_domain === $domain->domain) {
             $store->update(['custom_domain' => null]);
+            // Regenera URLs — agora voltam a usar subdomínio.
+            $store->regenerateProductUrls();
         }
 
         $domain->delete();

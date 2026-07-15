@@ -64,7 +64,12 @@ class StoreController extends Controller
 
         $store->update($validated);
 
-        return response()->json($store);
+        // Se subdomain ou custom_domain mudaram, regenera os links de checkout.
+        if (array_key_exists('subdomain', $validated) || array_key_exists('custom_domain', $validated)) {
+            $store->regenerateProductUrls();
+        }
+
+        return response()->json($store->fresh());
     }
 
     /**

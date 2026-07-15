@@ -4,21 +4,26 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Store;
-use App\Models\Product;
 use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
 {
     /**
-     * Get checkout data for a specific domain and product.
+     * Retorna os dados do checkout público.
+     *
+     * Query params:
+     *   - domain      : subdomínio / custom_domain da loja
+     *   - product_ids : lista de IDs como CSV "1,1,2" (repetições = quantidade)
+     *
+     * Responde com store, lista de produtos e total (soma considerando qty).
      */
     public function show(Request $request)
     {
         $domain = $request->query('domain');
-        $productId = $request->query('product_id');
+        $productIdsParam = $request->query('product_ids');
 
-        if (!$domain || !$productId) {
-            return response()->json(['error' => 'Missing domain or product parameters'], 400);
+        if (!$domain || !$productIdsParam) {
+            return response()->json(['error' => 'Missing domain or product_ids parameters'], 400);
         }
 
         $store = Store::resolveByDomain($domain);
@@ -27,13 +32,45 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
 
-        $product = $store->products()
-            ->where('id', $productId)
-            ->where('is_active', true)
-            ->first();
+        // IDs podem vir repetidos (mesmo produto várias unidades). Preservamos a ordem.
+        $ids = collect(explode(',', $productIdsParam))
+            ->map(fn ($v) => trim($v))
+            ->filter()
+            ->map(fn ($v) => (int) $v)
+            ->values();
 
-        if (!$product) {
-            return response()->json(['error' => 'Product not found'], 404);
+        if ($ids->isEmpty()) {
+            return response()->json(['error' => 'No valid product_ids provided'], 400);
+        }
+
+        // IDs únicos para buscar no banco.
+        $uniqueIds = $ids->unique()->values()->all();
+
+        $products = $store->products()
+            ->whereIn('id', $uniqueIds)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('id');
+
+        if ($products->isEmpty()) {
+            return response()->json(['error' => 'No active products found'], 404);
+        }
+
+        // Constrói a lista preservando repetições (qty).
+        $items = [];
+        $total = 0.0;
+
+        foreach ($ids as $id) {
+            $product = $products->get($id);
+            if (!$product) {
+                continue; // ignora IDs inativos/inexistentes
+            }
+            $items[] = $product;
+            $total += (float) $product->price;
+        }
+
+        if (empty($items)) {
+            return response()->json(['error' => 'No active products found'], 404);
         }
 
         return response()->json([
@@ -50,7 +87,8 @@ class CheckoutController extends Controller
                     return ['provider' => $gateway->provider];
                 }),
             ],
-            'product' => $product,
+            'products' => $items,
+            'total' => round($total, 2),
         ]);
     }
 }

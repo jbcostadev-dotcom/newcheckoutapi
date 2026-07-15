@@ -37,7 +37,7 @@ class OrderController extends Controller
 
         // Últimos 5 pedidos para o dashboard
         $recentOrders = $store->orders()
-            ->with('product:id,name,image_url,price')
+            ->with('items.product:id,name,image_url,price')
             ->latest()
             ->take(5)
             ->get();
@@ -58,7 +58,7 @@ class OrderController extends Controller
     {
         $store = $request->user()->stores()->findOrFail($storeId);
 
-        $query = $store->orders()->with('product:id,name,image_url,price');
+        $query = $store->orders()->with('items.product:id,name,image_url,price');
 
         // Filtro por status
         if ($request->filled('status')) {
@@ -90,7 +90,7 @@ class OrderController extends Controller
     public function show(Request $request, string $storeId, string $orderId)
     {
         $store = $request->user()->stores()->findOrFail($storeId);
-        $order = $store->orders()->with('product', 'store')->findOrFail($orderId);
+        $order = $store->orders()->with('items.product', 'store')->findOrFail($orderId);
 
         return response()->json($order);
     }

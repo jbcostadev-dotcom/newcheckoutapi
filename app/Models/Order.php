@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Order extends Model
 {
     protected $fillable = [
-        'store_id', 'product_id', 'customer_name', 'customer_email',
+        'store_id', 'customer_name', 'customer_email',
         'customer_phone', 'customer_document', 'amount', 'payment_method',
         'status', 'gateway_transaction_id', 'pix_qrcode', 'pix_copia_cola'
     ];
@@ -21,8 +21,8 @@ class Order extends Model
         return $this->belongsTo(Store::class);
     }
 
-    public function product()
+    public function items()
     {
-        return $this->belongsTo(Product::class);
+        return $this->hasMany(OrderItem::class);
     }
 }
