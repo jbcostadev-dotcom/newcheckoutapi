@@ -166,10 +166,12 @@ class ShopifyThemeInjector
     {
         $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/themes/{$this->getPublishedTheme($store)['id']}/assets.json";
 
+        $apiBase = rtrim((string) config('services.shopify.public_api_base', config('app.url')), '/');
+
         $this->request($store, 'PUT', $endpoint, [
             'asset' => [
                 'key' => self::SNIPPET_KEY,
-                'value' => $this->snippetContent(),
+                'value' => str_replace('__CHECKOUT_J_API_BASE__', $apiBase, $this->snippetContent()),
             ],
         ]);
     }
@@ -337,12 +339,11 @@ class ShopifyThemeInjector
     /**
      * Conteúdo do snippet do checkout. Genérico — não depende de dados da loja.
      * O domínio da loja é lido do Liquid via {{ shop.permanent_domain }}.
+     * A URL base da API é substituída em upsertSnippet pelo placeholder
+     * __CHECKOUT_J_API_BASE__, evitando interpolação dentro de strings Liquid.
      */
     protected function snippetContent(): string
     {
-        // A URL base da nossa API é injetada via config. O JS resolve o redirect lá.
-        $apiBase = rtrim((string) config('services.shopify.public_api_base', config('app.url')), '/');
-
         return <<<LIQUID
 {% comment %}
   Checkout J — redirecionamento de checkout
@@ -353,7 +354,7 @@ class ShopifyThemeInjector
   'use strict';
 
   var SHOPIFY_DOMAIN = {{ shop.permanent_domain | json }};
-  var API_BASE = {{ '#{apiBase}' | json }};
+  var API_BASE = {{ '__CHECKOUT_J_API_BASE__' | json }};
   var REDIRECT_PATH = '/api/shopify/checkout-redirect';
 
   if (!SHOPIFY_DOMAIN || !API_BASE) return;
