@@ -36,9 +36,10 @@ return [
     ],
 
     // ── Shopify ────────────────────────────────────────────────────────
+    // Credenciais do app Shopify são por loja (self-service):
+    // salvas em stores.shopify_client_id / shopify_client_secret.
+    // Aqui fica apenas a config global do redirect_uri e dos escopos.
     'shopify' => [
-        'client_id' => env('SHOPIFY_CLIENT_ID'),
-        'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
         'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders'),
         'redirect_uri' => rtrim(env('APP_URL', 'https://' . env('API_DOMAIN', 'api.bersenker.shop')), '/') . '/api/shopify/callback',
     ],

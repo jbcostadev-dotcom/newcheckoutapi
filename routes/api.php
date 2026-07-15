@@ -64,8 +64,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('stores/{store}/gateways/{gateway}', [GatewayController::class, 'destroy']);
     Route::post('stores/{store}/gateways/{gateway}/test', [GatewayController::class, 'test']);
 
-    // Shopify (status e sync)
+    // Shopify (status, credenciais e sync)
     Route::get('stores/{store}/shopify/status', [ShopifyController::class, 'status']);
+    Route::put('stores/{store}/shopify/credentials', [ShopifyController::class, 'updateCredentials']);
     Route::post('stores/{store}/shopify/sync', [ShopifyController::class, 'sync']);
 
     // Domains (CRUD + verificação DNS + ativação)

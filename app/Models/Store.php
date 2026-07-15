@@ -13,11 +13,18 @@ class Store extends Model
         'custom_domain',
         'shopify_domain',
         'shopify_access_token',
+        'shopify_client_id',
+        'shopify_client_secret',
         'status',
     ];
 
     protected $casts = [
         'status' => 'boolean',
+    ];
+
+    protected $hidden = [
+        'shopify_access_token',
+        'shopify_client_secret',
     ];
 
     public function user()
