@@ -39,7 +39,7 @@ class SyncShopifyProducts implements ShouldQueue
             'X-Shopify-Access-Token' => $this->store->shopify_access_token,
         ];
 
-        $endpoint = "https://{$this->store->shopify_domain}/admin/api/2024-01/products.json";
+        $endpoint = "https://{$this->store->shopify_domain}/admin/api/2025-07/products.json";
 
         // Paginação Shopify Admin API (até 250 por página).
         $seenVariantIds = [];
@@ -114,6 +114,12 @@ class SyncShopifyProducts implements ShouldQueue
                 ->whereNotIn('shopify_variant_id', $seenVariantIds)
                 ->update(['is_active' => false]);
         }
+
+        Log::info('Shopify sync concluído', [
+            'store_id' => $this->store->id,
+            'shopify_domain' => $this->store->shopify_domain,
+            'variants_imported' => count($seenVariantIds),
+        ]);
     }
 
     /**
