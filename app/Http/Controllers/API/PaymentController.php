@@ -29,6 +29,7 @@ class PaymentController extends Controller
             'customer_document' => 'nullable|string',
             'customer_phone' => 'nullable|string',
             'payment_method' => 'required|in:pix,credit_card',
+            'shipping_method_id' => 'nullable|integer',
             'shipping_address' => 'nullable|array',
             'shipping_address.cep' => 'nullable|string|max:9',
             'shipping_address.logradouro' => 'nullable|string|max:255',
@@ -94,8 +95,32 @@ class PaymentController extends Controller
 
         $total = round($total, 2);
 
+        // Calcula valor do frete.
+        $shippingMethodId = $validated['shipping_method_id'] ?? null;
+        $shippingPrice = null;
+
+        if ($shippingMethodId) {
+            $shippingMethod = $store->shippingMethods()
+                ->where('id', $shippingMethodId)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$shippingMethod) {
+                return response()->json(['error' => 'Shipping method not found or inactive'], 400);
+            }
+
+            $methodPrice = $shippingMethod->price ? (float) $shippingMethod->price : 0;
+            $minValueFree = $shippingMethod->min_value_free_shipping
+                ? (float) $shippingMethod->min_value_free_shipping
+                : null;
+
+            $shippingPrice = ($minValueFree !== null && $total >= $minValueFree) ? 0 : $methodPrice;
+        }
+
+        $finalTotal = round($total + ($shippingPrice ?? 0), 2);
+
         // Cria pedido + itens em transação (atomicidade).
-        $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $total) {
+        $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $finalTotal, $shippingMethodId, $shippingPrice) {
             $ship = $validated['shipping_address'] ?? [];
             $order = Order::create([
                 'store_id' => $store->id,
@@ -103,9 +128,11 @@ class PaymentController extends Controller
                 'customer_email' => $validated['customer_email'],
                 'customer_document' => $validated['customer_document'] ?? null,
                 'customer_phone' => $validated['customer_phone'] ?? null,
-                'amount' => $total,
+                'amount' => $finalTotal,
                 'payment_method' => $validated['payment_method'],
                 'status' => 'pending',
+                'shipping_method_id' => $shippingMethodId,
+                'shipping_price' => $shippingPrice,
                 'shipping_cep' => $ship['cep'] ?? null,
                 'shipping_logradouro' => $ship['logradouro'] ?? null,
                 'shipping_numero' => $ship['numero'] ?? null,

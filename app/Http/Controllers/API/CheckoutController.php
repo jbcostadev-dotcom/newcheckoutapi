@@ -95,6 +95,24 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'No active products found'], 404);
         }
 
+        $shippingMethods = $store->shippingMethods()
+            ->where('is_active', true)
+            ->orderBy('price', 'asc')
+            ->get()
+            ->map(function ($method) {
+                return [
+                    'id' => $method->id,
+                    'name' => $method->name,
+                    'price' => $method->price ? round((float) $method->price, 2) : null,
+                    'min_value_free_shipping' => $method->min_value_free_shipping
+                        ? round((float) $method->min_value_free_shipping, 2)
+                        : null,
+                    'min_delivery_days' => (int) $method->min_delivery_days,
+                    'max_delivery_days' => (int) $method->max_delivery_days,
+                    'icon' => $method->icon,
+                ];
+            });
+
         return response()->json([
             'store' => [
                 'name' => $store->name,
@@ -105,6 +123,7 @@ class CheckoutController extends Controller
             ],
             'products' => $items,
             'total' => round($total, 2),
+            'shipping_methods' => $shippingMethods,
         ]);
     }
 
@@ -139,6 +158,24 @@ class CheckoutController extends Controller
             ],
         ];
 
+        $shippingMethods = $store->shippingMethods()
+            ->where('is_active', true)
+            ->orderBy('price', 'asc')
+            ->get()
+            ->map(function ($method) {
+                return [
+                    'id' => $method->id,
+                    'name' => $method->name,
+                    'price' => $method->price ? round((float) $method->price, 2) : null,
+                    'min_value_free_shipping' => $method->min_value_free_shipping
+                        ? round((float) $method->min_value_free_shipping, 2)
+                        : null,
+                    'min_delivery_days' => (int) $method->min_delivery_days,
+                    'max_delivery_days' => (int) $method->max_delivery_days,
+                    'icon' => $method->icon,
+                ];
+            });
+
         return response()->json([
             'store' => [
                 'name' => $store->name,
@@ -150,6 +187,7 @@ class CheckoutController extends Controller
             'products' => $mockProducts,
             'total' => 99.90,
             'preview' => true,
+            'shipping_methods' => $shippingMethods,
         ]);
     }
 }
