@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('gateways', function (Blueprint $table) {
             $table->id();
             $table->foreignId('store_id')->constrained()->onDelete('cascade');
-            $table->string('provider'); // suitpay, stripe, etc.
+            $table->string('provider'); // unipay, stripe, etc.
             $table->text('api_key')->nullable();
             $table->text('secret_key')->nullable();
             $table->boolean('is_active')->default(true);

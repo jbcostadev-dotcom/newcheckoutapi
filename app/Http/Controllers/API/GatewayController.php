@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Gateway;
+use App\Services\UnipayService;
 use Illuminate\Http\Request;
 
 class GatewayController extends Controller
@@ -75,15 +76,32 @@ class GatewayController extends Controller
 
     /**
      * Testar credenciais do gateway.
-     * TODO: Implementar chamada real à API do provider.
+     * Para a Unipay (FastSoft Brasil), consulta o saldo da carteira.
      */
     public function test(Request $request, string $storeId, string $gatewayId)
     {
         $store = $request->user()->stores()->findOrFail($storeId);
         $gateway = $store->gateways()->findOrFail($gatewayId);
 
-        // Por enquanto retorna sucesso simulado.
-        // Implemente a chamada real de acordo com o provider ($gateway->provider).
+        if ($gateway->provider === 'unipay') {
+            try {
+                $service = new UnipayService($gateway);
+                $balance = $service->testConnection();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Conexão com Unipay validada com sucesso.',
+                    'balance' => $balance,
+                ]);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Falha ao conectar à Unipay: ' . $e->getMessage(),
+                ], 422);
+            }
+        }
+
+        // Outros providers: simulação.
         return response()->json([
             'success' => true,
             'message' => "Conexão com {$gateway->provider} testada com sucesso (simulação).",

@@ -118,7 +118,11 @@ class CheckoutController extends Controller
                 'name' => $store->name,
                 'settings' => $store->checkoutSettings ?? $this->defaultSettings(),
                 'gateways' => $store->gateways->map(function ($gateway) {
-                    return ['provider' => $gateway->provider];
+                    return [
+                        'provider' => $gateway->provider,
+                        // Para a Unipay, api_key é a chave pública (pk_live_*) usada no SDK client-side.
+                        'public_key' => $gateway->provider === 'unipay' ? $gateway->api_key : null,
+                    ];
                 }),
             ],
             'products' => $items,
@@ -181,7 +185,10 @@ class CheckoutController extends Controller
                 'name' => $store->name,
                 'settings' => $store->checkoutSettings ?? $this->defaultSettings(),
                 'gateways' => $store->gateways->map(function ($gateway) {
-                    return ['provider' => $gateway->provider];
+                    return [
+                        'provider' => $gateway->provider,
+                        'public_key' => $gateway->provider === 'unipay' ? $gateway->api_key : null,
+                    ];
                 }),
             ],
             'products' => $mockProducts,

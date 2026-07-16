@@ -48,12 +48,13 @@ return [
         'public_api_base' => env('SHOPIFY_PUBLIC_API_BASE', env('APP_URL')),
     ],
 
-    // ── SuitPay ───────────────────────────────────────────────────────
-    'suitpay' => [
-        'api_url' => env('SUITPAY_API_URL', 'https://api.suitpay.com.br'),
-        'api_key' => env('SUITPAY_API_KEY'),
-        'secret' => env('SUITPAY_SECRET'),
-        'environment' => env('SUITPAY_ENVIRONMENT', 'sandbox'), // sandbox | production
+    // ── Unipay (FastSoft Brasil) ──────────────────────────────────────
+    // Credenciais (api_key = pk_live_* pública do SDK, secret_key = sk_* secreta
+    // para Basic Auth server-side) ficam por loja, na tabela `gateways`.
+    // Aqui permanecem apenas as URLs globais (API REST + SDK JS client-side).
+    'unipay' => [
+        'api_url' => env('UNIPAY_API_URL', 'https://api.fastsoftbrasil.com'),
+        'js_url'  => env('UNIPAY_JS_URL', 'https://js.fastsoftbrasil.com/security.js'),
     ],
 
     // ── Domínios do projeto ───────────────────────────────────────────
