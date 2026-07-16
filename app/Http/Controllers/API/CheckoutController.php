@@ -82,6 +82,7 @@ class CheckoutController extends Controller
                     'dark_mode' => true,
                     'enable_order_bump' => false,
                     'button_text' => 'Finalizar Compra',
+                    'banner_message' => 'Digite aqui a mensagem',
                 ],
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return ['provider' => $gateway->provider];
@@ -89,6 +90,64 @@ class CheckoutController extends Controller
             ],
             'products' => $items,
             'total' => round($total, 2),
+        ]);
+    }
+
+    /**
+     * Retorna dados de demonstração do checkout para o editor ao vivo.
+     * Usa produtos fictícios para que o preview sempre mostre o checkout
+     * completo, mesmo sem product_ids. Responde apenas o necessário para
+     * renderizar a UI (store + settings + mock products + gateways).
+     */
+    public function preview(Request $request)
+    {
+        $domain = $request->query('domain');
+
+        if (!$domain) {
+            return response()->json(['error' => 'Missing domain parameter'], 400);
+        }
+
+        $store = Store::resolveByDomain($domain);
+
+        if (!$store) {
+            return response()->json(['error' => 'Store not found or inactive'], 404);
+        }
+
+        $mockProducts = [
+            [
+                'id' => 1,
+                'name' => 'Produto Exemplo',
+                'description' => 'Produto de demonstração para o editor do checkout.',
+                'price' => 99.90,
+                'image_url' => null,
+            ],
+            [
+                'id' => 2,
+                'name' => 'Produto Bônus',
+                'description' => null,
+                'price' => 49.90,
+                'image_url' => null,
+            ],
+        ];
+
+        return response()->json([
+            'store' => [
+                'name' => $store->name,
+                'settings' => $store->checkoutSettings ?? (object) [
+                    'primary_color' => '#6366f1',
+                    'secondary_color' => '#8b5cf6',
+                    'dark_mode' => true,
+                    'enable_order_bump' => false,
+                    'button_text' => 'Finalizar Compra',
+                    'banner_message' => 'Digite aqui a mensagem',
+                ],
+                'gateways' => $store->gateways->map(function ($gateway) {
+                    return ['provider' => $gateway->provider];
+                }),
+            ],
+            'products' => $mockProducts,
+            'total' => 99.90,
+            'preview' => true,
         ]);
     }
 }

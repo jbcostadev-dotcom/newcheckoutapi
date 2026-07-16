@@ -33,7 +33,9 @@ class CheckoutSettingController extends Controller
             'logo_url' => 'nullable|string|url',
             'banner_url' => 'nullable|string|url',
             'enable_order_bump' => 'boolean',
-            'dark_mode' => 'boolean'
+            'dark_mode' => 'boolean',
+            'button_text' => 'nullable|string|max:50',
+            'banner_message' => 'nullable|string|max:255',
         ]);
 
         $settings->update($validated);

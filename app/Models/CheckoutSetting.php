@@ -15,6 +15,7 @@ class CheckoutSetting extends Model
         'enable_order_bump',
         'dark_mode',
         'button_text',
+        'banner_message',
     ];
 
     protected $casts = [

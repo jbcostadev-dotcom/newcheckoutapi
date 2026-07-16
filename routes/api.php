@@ -26,6 +26,7 @@ Route::get('/shopify/callback', [ShopifyController::class, 'callback']);
 
 // Checkout público
 Route::get('/checkout', [CheckoutController::class, 'show']);
+Route::get('/checkout/preview', [CheckoutController::class, 'preview']);
 Route::post('/checkout/process', [PaymentController::class, 'process']);
 Route::post('/webhook/suitpay', [PaymentController::class, 'webhook']);
 
