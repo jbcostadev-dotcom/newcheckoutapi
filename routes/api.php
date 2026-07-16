@@ -67,10 +67,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('stores/{store}/gateways/{gateway}', [GatewayController::class, 'destroy']);
     Route::post('stores/{store}/gateways/{gateway}/test', [GatewayController::class, 'test']);
 
-    // Shopify (status, credenciais e sync)
+    // Shopify (status, credenciais, sync e desconexão)
     Route::get('stores/{store}/shopify/status', [ShopifyController::class, 'status']);
     Route::put('stores/{store}/shopify/credentials', [ShopifyController::class, 'updateCredentials']);
     Route::post('stores/{store}/shopify/sync', [ShopifyController::class, 'sync']);
+    Route::delete('stores/{store}/shopify', [ShopifyController::class, 'disconnect']);
 
     // Shopify — injeção do snippet de checkout no tema
     Route::post('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'injectCheckout']);

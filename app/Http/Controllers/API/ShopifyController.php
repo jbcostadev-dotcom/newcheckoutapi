@@ -141,7 +141,45 @@ class ShopifyController extends Controller
     }
 
     /**
-     * Inicia o OAuth usando as credenciais do app Shopifypertencentes à loja.
+     * Desconecta a loja Shopify, remove o snippet do tema (quando possível) e
+     * libera o domínio Shopify para ser usado por outra loja.
+     */
+    public function disconnect(Request $request, ShopifyThemeInjector $injector, string $storeId)
+    {
+        $store = $request->user()->stores()->findOrFail($storeId);
+
+        if (!$store->isShopifyConnected()) {
+            return response()->json(['message' => 'Shopify não está conectado para esta loja.'], 400);
+        }
+
+        // Tenta remover o snippet do tema antes de limpar as credenciais.
+        try {
+            $injector->remove($store);
+        } catch (\Throwable $e) {
+            Log::warning('Não foi possível remover o snippet ao desconectar Shopify', [
+                'store_id' => $store->id,
+                'error' => $e->getMessage(),
+            ]);
+            // Continua mesmo se falhar — o importante é liberar o domínio.
+        }
+
+        $store->update([
+            'shopify_domain' => null,
+            'shopify_access_token' => null,
+            'shopify_client_id' => null,
+            'shopify_client_secret' => null,
+            'shopify_injected_theme_id' => null,
+            'shopify_injected_at' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Loja Shopify desconectada com sucesso.',
+            'connected' => false,
+        ]);
+    }
+
+    /**
+     * Inicia o OAuth usando as credenciais do app Shopify pertencentes à loja.
      *
      * Query: shop (domínio myshopify), store_id
      */
@@ -189,12 +227,12 @@ class ShopifyController extends Controller
         $storeId = $stateData['store_id'] ?? null;
 
         if (!$storeId || !$code || !$shop) {
-            return response()->json(['error' => 'Invalid callback parameters'], 400);
+            return response()->json(['message' => 'Invalid callback parameters'], 400);
         }
 
         $store = Store::find($storeId);
         if (!$store || !$store->shopify_client_id || !$store->shopify_client_secret) {
-            return response()->json(['error' => 'Loja ou credenciais Shopify não encontradas.'], 404);
+            return response()->json(['message' => 'Loja ou credenciais Shopify não encontradas.'], 404);
         }
 
         $response = Http::post("https://{$shop}/admin/oauth/access_token", [
@@ -207,11 +245,28 @@ class ShopifyController extends Controller
             $accessToken = $response->json()['access_token'] ?? null;
 
             if (!$accessToken) {
-                return response()->json(['error' => 'Token não retornado pela Shopify.'], 502);
+                return response()->json(['message' => 'Token não retornado pela Shopify.'], 502);
+            }
+
+            // Normaliza o domínio: aceita "loja.myshopify.com".
+            $shopDomain = $shop;
+            if (!str_contains($shop, '.')) {
+                $shopDomain = $shop . '.myshopify.com';
+            }
+
+            // Garante que outra loja não esteja usando o mesmo domínio Shopify.
+            $existing = Store::where('shopify_domain', $shopDomain)
+                ->where('id', '!=', $store->id)
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'message' => 'Essa loja Shopify já está cadastrada em outra conta. Remova-a antes de integrá-la.',
+                ], 422);
             }
 
             $store->update([
-                'shopify_domain' => $shop,
+                'shopify_domain' => $shopDomain,
                 'shopify_access_token' => $accessToken,
             ]);
 
@@ -226,8 +281,8 @@ class ShopifyController extends Controller
         }
 
         return response()->json([
-            'error' => 'Failed to obtain access token',
-            'details' => $response->json(),
+            'message' => 'Failed to obtain access token',
+            'error' => $response->json(),
         ], 502);
     }
 
