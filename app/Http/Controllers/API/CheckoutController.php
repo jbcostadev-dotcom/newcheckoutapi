@@ -8,15 +8,40 @@ use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
 {
-    /**
-     * Retorna os dados do checkout público.
-     *
-     * Query params:
-     *   - domain      : subdomínio / custom_domain da loja
-     *   - product_ids : lista de IDs como CSV "1,1,2" (repetições = quantidade)
-     *
-     * Responde com store, lista de produtos e total (soma considerando qty).
-     */
+    private function defaultSettings()
+    {
+        return (object) [
+            'primary_color' => '#6366f1',
+            'secondary_color' => '#8b5cf6',
+            'dark_mode' => true,
+            'enable_order_bump' => false,
+            'button_text' => 'Finalizar Compra',
+            'banner_message' => 'Digite aqui a mensagem',
+            'header_store_name_visible' => true,
+            'header_secure_badge' => true,
+            'announcement_bar_enabled' => true,
+            'announcement_bar_bg' => '#333333',
+            'announcement_bar_text_color' => '#d4a843',
+            'banner_height' => 'md',
+            'summary_title' => 'Resumo do pedido',
+            'summary_show_discount' => true,
+            'summary_coupon_enabled' => true,
+            'step_title_font_size' => '1.25rem',
+            'scarcity_enabled' => false,
+            'scarcity_type' => 'countdown',
+            'scarcity_text' => null,
+            'scarcity_countdown_minutes' => 15,
+            'pix_confirmation_title' => 'Aguardando pagamento...',
+            'pix_confirmation_message' => null,
+            'pix_confirmation_logo' => null,
+            'footer_text' => 'Ambiente seguro · SSL criptografado',
+            'footer_show_cnpj' => false,
+            'footer_cnpj' => null,
+            'font_family' => 'Inter',
+            'font_size_base' => '16px',
+        ];
+    }
+
     public function show(Request $request)
     {
         $domain = $request->query('domain');
@@ -32,7 +57,6 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
 
-        // IDs podem vir repetidos (mesmo produto várias unidades). Preservamos a ordem.
         $ids = collect(explode(',', $productIdsParam))
             ->map(fn ($v) => trim($v))
             ->filter()
@@ -43,7 +67,6 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'No valid product_ids provided'], 400);
         }
 
-        // IDs únicos para buscar no banco.
         $uniqueIds = $ids->unique()->values()->all();
 
         $products = $store->products()
@@ -56,14 +79,13 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'No active products found'], 404);
         }
 
-        // Constrói a lista preservando repetições (qty).
         $items = [];
         $total = 0.0;
 
         foreach ($ids as $id) {
             $product = $products->get($id);
             if (!$product) {
-                continue; // ignora IDs inativos/inexistentes
+                continue;
             }
             $items[] = $product;
             $total += (float) $product->price;
@@ -76,14 +98,7 @@ class CheckoutController extends Controller
         return response()->json([
             'store' => [
                 'name' => $store->name,
-                'settings' => $store->checkoutSettings ?? (object) [
-                    'primary_color' => '#6366f1',
-                    'secondary_color' => '#8b5cf6',
-                    'dark_mode' => true,
-                    'enable_order_bump' => false,
-                    'button_text' => 'Finalizar Compra',
-                    'banner_message' => 'Digite aqui a mensagem',
-                ],
+                'settings' => $store->checkoutSettings ?? $this->defaultSettings(),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return ['provider' => $gateway->provider];
                 }),
@@ -93,12 +108,6 @@ class CheckoutController extends Controller
         ]);
     }
 
-    /**
-     * Retorna dados de demonstração do checkout para o editor ao vivo.
-     * Usa produtos fictícios para que o preview sempre mostre o checkout
-     * completo, mesmo sem product_ids. Responde apenas o necessário para
-     * renderizar a UI (store + settings + mock products + gateways).
-     */
     public function preview(Request $request)
     {
         $domain = $request->query('domain');
@@ -133,14 +142,7 @@ class CheckoutController extends Controller
         return response()->json([
             'store' => [
                 'name' => $store->name,
-                'settings' => $store->checkoutSettings ?? (object) [
-                    'primary_color' => '#6366f1',
-                    'secondary_color' => '#8b5cf6',
-                    'dark_mode' => true,
-                    'enable_order_bump' => false,
-                    'button_text' => 'Finalizar Compra',
-                    'banner_message' => 'Digite aqui a mensagem',
-                ],
+                'settings' => $store->checkoutSettings ?? $this->defaultSettings(),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return ['provider' => $gateway->provider];
                 }),
