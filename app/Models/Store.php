@@ -61,6 +61,11 @@ class Store extends Model
         return $this->hasMany(Gateway::class);
     }
 
+    public function shippingMethods()
+    {
+        return $this->hasMany(ShippingMethod::class);
+    }
+
     public function smtpSettings()
     {
         return $this->hasOne(SmtpSetting::class);

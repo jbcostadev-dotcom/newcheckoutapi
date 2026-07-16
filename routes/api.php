@@ -14,6 +14,7 @@ use App\Http\Controllers\API\CommunicationController;
 use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\API\GatewayController;
 use App\Http\Controllers\API\SslController;
+use App\Http\Controllers\API\ShippingMethodController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -67,6 +68,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('stores/{store}/gateways/{gateway}', [GatewayController::class, 'update']);
     Route::delete('stores/{store}/gateways/{gateway}', [GatewayController::class, 'destroy']);
     Route::post('stores/{store}/gateways/{gateway}/test', [GatewayController::class, 'test']);
+
+    // Shipping Methods (Fretes)
+    Route::get('stores/{store}/shipping-methods', [ShippingMethodController::class, 'index']);
+    Route::post('stores/{store}/shipping-methods', [ShippingMethodController::class, 'store']);
+    Route::put('stores/{store}/shipping-methods/{shippingMethod}', [ShippingMethodController::class, 'update']);
+    Route::delete('stores/{store}/shipping-methods/{shippingMethod}', [ShippingMethodController::class, 'destroy']);
 
     // Shopify (status, credenciais, sync e desconexão)
     Route::get('stores/{store}/shopify/status', [ShopifyController::class, 'status']);
