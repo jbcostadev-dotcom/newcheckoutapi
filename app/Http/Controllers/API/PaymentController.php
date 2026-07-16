@@ -180,6 +180,28 @@ class PaymentController extends Controller
     }
 
     /**
+     * Retorna o status de pagamento PIX de um pedido.
+     */
+    public function getPixStatus(int $orderId)
+    {
+        $order = Order::with('store')->find($orderId);
+
+        if (!$order || $order->payment_method !== 'pix') {
+            return response()->json(['error' => 'Order not found or not PIX'], 404);
+        }
+
+        return response()->json([
+            'order_id' => $order->id,
+            'status' => $order->status,
+            'pix_qrcode' => $order->pix_qrcode,
+            'pix_copia_cola' => $order->pix_copia_cola,
+            'total' => $order->amount,
+            'created_at' => $order->created_at?->toISOString(),
+            'store_name' => $order->store?->name,
+        ]);
+    }
+
+    /**
      * Receive webhook / postback from Suitpay.
      */
     public function webhook(Request $request)
