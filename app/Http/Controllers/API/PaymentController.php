@@ -29,6 +29,14 @@ class PaymentController extends Controller
             'customer_document' => 'nullable|string',
             'customer_phone' => 'nullable|string',
             'payment_method' => 'required|in:pix,credit_card',
+            'shipping_address' => 'nullable|array',
+            'shipping_address.cep' => 'nullable|string|max:9',
+            'shipping_address.logradouro' => 'nullable|string|max:255',
+            'shipping_address.numero' => 'nullable|string|max:30',
+            'shipping_address.complemento' => 'nullable|string|max:120',
+            'shipping_address.bairro' => 'nullable|string|max:120',
+            'shipping_address.cidade' => 'nullable|string|max:120',
+            'shipping_address.uf' => 'nullable|string|max:2',
         ]);
 
         $store = Store::resolveByDomain($validated['domain']);
@@ -88,6 +96,7 @@ class PaymentController extends Controller
 
         // Cria pedido + itens em transação (atomicidade).
         $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $total) {
+            $ship = $validated['shipping_address'] ?? [];
             $order = Order::create([
                 'store_id' => $store->id,
                 'customer_name' => $validated['customer_name'],
@@ -97,6 +106,13 @@ class PaymentController extends Controller
                 'amount' => $total,
                 'payment_method' => $validated['payment_method'],
                 'status' => 'pending',
+                'shipping_cep' => $ship['cep'] ?? null,
+                'shipping_logradouro' => $ship['logradouro'] ?? null,
+                'shipping_numero' => $ship['numero'] ?? null,
+                'shipping_complemento' => $ship['complemento'] ?? null,
+                'shipping_bairro' => $ship['bairro'] ?? null,
+                'shipping_cidade' => $ship['cidade'] ?? null,
+                'shipping_uf' => $ship['uf'] ?? null,
             ]);
 
             foreach ($orderItemsData as $itemData) {
