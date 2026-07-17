@@ -42,6 +42,12 @@ class CheckoutSetting extends Model
         'font_family',
         'font_size_base',
         'social_proofs_enabled',
+        'pix_enabled',
+        'pix_gateway_id',
+        'card_enabled',
+        'card_gateway_id',
+        'boleto_enabled',
+        'boleto_gateway_id',
     ];
 
     protected $casts = [
@@ -56,6 +62,12 @@ class CheckoutSetting extends Model
         'scarcity_countdown_minutes' => 'integer',
         'footer_show_cnpj' => 'boolean',
         'social_proofs_enabled' => 'boolean',
+        'pix_enabled' => 'boolean',
+        'card_enabled' => 'boolean',
+        'boleto_enabled' => 'boolean',
+        'pix_gateway_id' => 'integer',
+        'card_gateway_id' => 'integer',
+        'boleto_gateway_id' => 'integer',
     ];
 
     public function store()

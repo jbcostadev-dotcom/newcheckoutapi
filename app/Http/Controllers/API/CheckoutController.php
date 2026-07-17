@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Store;
+use App\Models\Gateway;
 use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
@@ -40,7 +41,55 @@ class CheckoutController extends Controller
             'font_family' => 'Inter',
             'font_size_base' => '16px',
             'social_proofs_enabled' => true,
+            'pix_enabled' => true,
+            'card_enabled' => true,
+            'boleto_enabled' => false,
+            'pix_gateway_id' => null,
+            'card_gateway_id' => null,
+            'boleto_gateway_id' => null,
         ];
+    }
+
+    /**
+     * Builds the payment_methods block for the checkout response.
+     * Each method includes: enabled, gateway_provider, public_key.
+     */
+    private function buildPaymentMethods($settings, $store)
+    {
+        $methods = [
+            'pix' => [
+                'enabled' => (bool) ($settings->pix_enabled ?? true),
+                'gateway_id' => $settings->pix_gateway_id ?? null,
+            ],
+            'card' => [
+                'enabled' => (bool) ($settings->card_enabled ?? true),
+                'gateway_id' => $settings->card_gateway_id ?? null,
+            ],
+            'boleto' => [
+                'enabled' => (bool) ($settings->boleto_enabled ?? false),
+                'gateway_id' => $settings->boleto_gateway_id ?? null,
+            ],
+        ];
+
+        $result = [];
+        foreach ($methods as $key => $meta) {
+            $gateway = null;
+            if ($meta['gateway_id']) {
+                $gateway = $store->gateways()->where('id', $meta['gateway_id'])->where('is_active', true)->first();
+            }
+            // Fallback: if no gateway assigned but method is enabled, try the first active gateway
+            if (!$gateway && $meta['enabled']) {
+                $gateway = $store->gateways()->where('is_active', true)->first();
+            }
+
+            $result[$key] = [
+                'enabled' => $meta['enabled'],
+                'gateway_provider' => $gateway?->provider,
+                'public_key' => ($gateway && $gateway->provider === 'unipay') ? $gateway->api_key : null,
+            ];
+        }
+
+        return $result;
     }
 
     public function show(Request $request)
@@ -114,17 +163,19 @@ class CheckoutController extends Controller
                 ];
             });
 
+        $effectiveSettings = $store->checkoutSettings ?? $this->defaultSettings();
+
         return response()->json([
             'store' => [
                 'name' => $store->name,
-                'settings' => $store->checkoutSettings ?? $this->defaultSettings(),
+                'settings' => $effectiveSettings,
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
-                        // Para a Unipay, api_key é a chave pública (pk_live_*) usada no SDK client-side.
                         'public_key' => $gateway->provider === 'unipay' ? $gateway->api_key : null,
                     ];
                 }),
+                'payment_methods' => $this->buildPaymentMethods($effectiveSettings, $store),
             ],
             'products' => $items,
             'total' => round($total, 2),
@@ -191,16 +242,19 @@ class CheckoutController extends Controller
                 ];
             });
 
+        $effectiveSettings = $store->checkoutSettings ?? $this->defaultSettings();
+
         return response()->json([
             'store' => [
                 'name' => $store->name,
-                'settings' => $store->checkoutSettings ?? $this->defaultSettings(),
+                'settings' => $effectiveSettings,
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
                         'public_key' => $gateway->provider === 'unipay' ? $gateway->api_key : null,
                     ];
                 }),
+                'payment_methods' => $this->buildPaymentMethods($effectiveSettings, $store),
             ],
             'products' => $mockProducts,
             'total' => 99.90,

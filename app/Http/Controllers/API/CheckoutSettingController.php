@@ -56,6 +56,12 @@ class CheckoutSettingController extends Controller
             'font_family' => 'nullable|string|max:50',
             'font_size_base' => 'nullable|string|max:10',
             'social_proofs_enabled' => 'boolean',
+            'pix_enabled' => 'boolean',
+            'pix_gateway_id' => 'nullable|integer|exists:gateways,id',
+            'card_enabled' => 'boolean',
+            'card_gateway_id' => 'nullable|integer|exists:gateways,id',
+            'boleto_enabled' => 'boolean',
+            'boleto_gateway_id' => 'nullable|integer|exists:gateways,id',
         ]);
 
         $settings->update($validated);

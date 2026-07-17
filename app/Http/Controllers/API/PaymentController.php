@@ -53,9 +53,42 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
 
-        $gateway = $store->gateways()->where('provider', 'unipay')->first();
+        // Resolve the correct gateway based on the payment method configured in checkout settings.
+        $settings = $store->checkoutSettings;
+        $paymentMethod = $validated['payment_method'];
+
+        // Validate that the payment method is enabled.
+        $methodEnabledMap = [
+            'pix' => $settings->pix_enabled ?? true,
+            'credit_card' => $settings->card_enabled ?? true,
+            'boleto' => $settings->boleto_enabled ?? false,
+        ];
+
+        if (!($methodEnabledMap[$paymentMethod] ?? false)) {
+            return response()->json(['error' => 'Payment method is not enabled'], 400);
+        }
+
+        // Resolve gateway for this payment method.
+        $gatewayIdMap = [
+            'pix' => $settings->pix_gateway_id ?? null,
+            'credit_card' => $settings->card_gateway_id ?? null,
+            'boleto' => $settings->boleto_gateway_id ?? null,
+        ];
+
+        $gatewayId = $gatewayIdMap[$paymentMethod] ?? null;
+        $gateway = null;
+
+        if ($gatewayId) {
+            $gateway = $store->gateways()->where('id', $gatewayId)->where('is_active', true)->first();
+        }
+
+        // Fallback: first active gateway
+        if (!$gateway) {
+            $gateway = $store->gateways()->where('is_active', true)->first();
+        }
+
         if (!$gateway || !$gateway->secret_key) {
-            return response()->json(['error' => 'Gateway Unipay not configured'], 400);
+            return response()->json(['error' => 'No active payment gateway configured for this method'], 400);
         }
 
         // Agrupa itens por product_id somando qty (defensivo contra duplicação).
