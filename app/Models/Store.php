@@ -76,6 +76,11 @@ class Store extends Model
         return $this->hasMany(WhatsappInstance::class);
     }
 
+    public function socialProofs()
+    {
+        return $this->hasMany(SocialProof::class);
+    }
+
     /**
      * Indica se a loja possui Shopify conectada.
      */

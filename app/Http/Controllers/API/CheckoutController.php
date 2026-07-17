@@ -39,6 +39,7 @@ class CheckoutController extends Controller
             'footer_cnpj' => null,
             'font_family' => 'Inter',
             'font_size_base' => '16px',
+            'social_proofs_enabled' => true,
         ];
     }
 
@@ -128,6 +129,16 @@ class CheckoutController extends Controller
             'products' => $items,
             'total' => round($total, 2),
             'shipping_methods' => $shippingMethods,
+            'social_proofs' => $store->socialProofs()
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get()
+                ->map(fn ($p) => [
+                    'name' => $p->name,
+                    'testimonial' => $p->testimonial,
+                    'photo_url' => $p->photo_url,
+                    'stars' => $p->stars,
+                ]),
         ]);
     }
 
@@ -195,6 +206,16 @@ class CheckoutController extends Controller
             'total' => 99.90,
             'preview' => true,
             'shipping_methods' => $shippingMethods,
+            'social_proofs' => $store->socialProofs()
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get()
+                ->map(fn ($p) => [
+                    'name' => $p->name,
+                    'testimonial' => $p->testimonial,
+                    'photo_url' => $p->photo_url,
+                    'stars' => $p->stars,
+                ]),
         ]);
     }
 }

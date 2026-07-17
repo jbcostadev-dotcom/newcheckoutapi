@@ -41,6 +41,7 @@ class CheckoutSetting extends Model
         'footer_cnpj',
         'font_family',
         'font_size_base',
+        'social_proofs_enabled',
     ];
 
     protected $casts = [
@@ -54,6 +55,7 @@ class CheckoutSetting extends Model
         'scarcity_enabled' => 'boolean',
         'scarcity_countdown_minutes' => 'integer',
         'footer_show_cnpj' => 'boolean',
+        'social_proofs_enabled' => 'boolean',
     ];
 
     public function store()

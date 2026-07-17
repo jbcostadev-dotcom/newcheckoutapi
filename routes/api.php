@@ -15,6 +15,7 @@ use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\API\GatewayController;
 use App\Http\Controllers\API\SslController;
 use App\Http\Controllers\API\ShippingMethodController;
+use App\Http\Controllers\API\SocialProofController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -75,6 +76,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{store}/shipping-methods', [ShippingMethodController::class, 'store']);
     Route::put('stores/{store}/shipping-methods/{shippingMethod}', [ShippingMethodController::class, 'update']);
     Route::delete('stores/{store}/shipping-methods/{shippingMethod}', [ShippingMethodController::class, 'destroy']);
+
+    // Social Proofs
+    Route::get('stores/{store}/social-proofs', [SocialProofController::class, 'index']);
+    Route::post('stores/{store}/social-proofs', [SocialProofController::class, 'store']);
+    Route::post('stores/{store}/social-proofs/{socialProof}', [SocialProofController::class, 'update']);
+    Route::delete('stores/{store}/social-proofs/{socialProof}', [SocialProofController::class, 'destroy']);
 
     // Shopify (status, credenciais, sync e desconexão)
     Route::get('stores/{store}/shopify/status', [ShopifyController::class, 'status']);

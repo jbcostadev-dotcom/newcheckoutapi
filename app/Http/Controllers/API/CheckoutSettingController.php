@@ -55,6 +55,7 @@ class CheckoutSettingController extends Controller
             'footer_cnpj' => 'nullable|string|max:20',
             'font_family' => 'nullable|string|max:50',
             'font_size_base' => 'nullable|string|max:10',
+            'social_proofs_enabled' => 'boolean',
         ]);
 
         $settings->update($validated);
