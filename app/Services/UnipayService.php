@@ -58,9 +58,12 @@ class UnipayService
             $body = ['raw' => $response->body()];
         }
 
-        $message = is_array($body) && !empty($body['message'])
-            ? $body['message']
-            : 'Erro na chamada à Unipay (' . $context . '): HTTP ' . $response->status();
+        $message = 'Erro na chamada à Unipay (' . $context . '): HTTP ' . $response->status();
+        if (is_array($body) && !empty($body['message'])) {
+            $message = is_array($body['message']) 
+                ? json_encode($body['message'], JSON_UNESCAPED_UNICODE) 
+                : (string) $body['message'];
+        }
 
         throw new UnipayException($message, $response->status(), $body);
     }
