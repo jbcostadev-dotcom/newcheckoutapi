@@ -39,7 +39,10 @@ class UnipayService
 
     protected function client()
     {
-        return Http::withHeaders($this->authHeaders())->baseUrl($this->baseUrl);
+        return Http::withHeaders($this->authHeaders())
+            ->baseUrl($this->baseUrl)
+            ->timeout(30)
+            ->connectTimeout(10);
     }
 
     /**

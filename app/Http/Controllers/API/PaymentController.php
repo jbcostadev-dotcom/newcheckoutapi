@@ -329,6 +329,23 @@ class PaymentController extends Controller
                 'message' => $e->getMessage(),
                 'details' => $e->body,
             ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Erro inesperado ao criar transação na Unipay', [
+                'order_id' => $order->id,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            $order->update(['status' => Order::STATUS_FAILED]);
+
+            if ($paymentMethod === 'credit_card') {
+                $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $e->getMessage(), null, $ip);
+            }
+
+            return response()->json([
+                'error' => 'Falha ao comunicar com a Unipay',
+                'message' => $e->getMessage(),
+            ], 500);
         }
 
         // Persiste dados retornados pela Unipay.
