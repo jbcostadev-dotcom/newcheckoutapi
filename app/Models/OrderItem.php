@@ -10,6 +10,7 @@ class OrderItem extends Model
         'order_id',
         'product_id',
         'name',
+        'attributes',
         'qty',
         'unit_price',
     ];
@@ -17,6 +18,7 @@ class OrderItem extends Model
     protected $casts = [
         'unit_price' => 'decimal:2',
         'qty' => 'integer',
+        'attributes' => 'array',
     ];
 
     public function order()

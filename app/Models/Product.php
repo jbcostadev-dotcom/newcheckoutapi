@@ -11,6 +11,8 @@ class Product extends Model
         'shopify_product_id',
         'shopify_variant_id',
         'name',
+        'parent_title',
+        'attributes',
         'description',
         'price',
         'compare_at_price',
@@ -23,6 +25,7 @@ class Product extends Model
         'price' => 'decimal:2',
         'compare_at_price' => 'decimal:2',
         'is_active' => 'boolean',
+        'attributes' => 'array',
     ];
 
     public function store()

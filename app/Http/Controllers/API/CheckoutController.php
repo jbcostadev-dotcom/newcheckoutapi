@@ -122,7 +122,7 @@ class CheckoutController extends Controller
         $products = $store->products()
             ->whereIn('id', $uniqueIds)
             ->where('is_active', true)
-            ->get()
+            ->get(['id', 'name', 'parent_title', 'attributes', 'description', 'price', 'compare_at_price', 'image_url', 'shopify_product_id', 'shopify_variant_id'])
             ->keyBy('id');
 
         if ($products->isEmpty()) {

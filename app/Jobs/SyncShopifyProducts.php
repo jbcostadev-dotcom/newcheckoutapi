@@ -63,16 +63,21 @@ class SyncShopifyProducts implements ShouldQueue
 
             foreach ($products as $shopifyProduct) {
                 $imageSrc = $shopifyProduct['image']['src'] ?? null;
+                $parentTitle = $shopifyProduct['title'] ?? 'Produto';
+
+                // Nomes das opções do produto no Shopify (max 3):
+                // ex.: ["Cor", "Tamanho", "Material"].
+                $optionNames = [];
+                foreach ($shopifyProduct['options'] ?? [] as $opt) {
+                    $optionNames[] = $opt['name'] ?? null;
+                }
 
                 foreach ($shopifyProduct['variants'] ?? [] as $variant) {
                     $variantId = (string) $variant['id'];
                     $seenVariantIds[] = $variantId;
 
-                    // Nome amigável: "Camiseta - Preta / G" ou só o título se variante única.
-                    $variantName = $this->buildVariantName(
-                        $shopifyProduct['title'] ?? 'Produto',
-                        $variant['title'] ?? null
-                    );
+                    // Atributos estruturados = combinação nome+valor de cada option.
+                    $attributes = $this->buildAttributes($optionNames, $variant);
 
                     $product = $this->store->products()->updateOrCreate(
                         [
@@ -81,7 +86,9 @@ class SyncShopifyProducts implements ShouldQueue
                         ],
                         [
                             'shopify_product_id' => (string) $shopifyProduct['id'],
-                            'name' => $variantName,
+                            'name' => $parentTitle,
+                            'parent_title' => $parentTitle,
+                            'attributes' => $attributes ?: null,
                             'description' => $shopifyProduct['body_html'] ?? null,
                             'price' => $variant['price'] ?? 0,
                             'compare_at_price' => $variant['compare_at_price'] ?? null,
@@ -123,14 +130,36 @@ class SyncShopifyProducts implements ShouldQueue
     }
 
     /**
-     * Constrói o nome do produto considerando a variante.
+     * Monta a lista de atributos estruturados a partir das options do produto
+     * Shopify e dos valores option1/option2/option3 da variante.
+     *
+     * @param array<int,string|null> $optionNames
+     * @return array<int,array{name:string,value:string}>
      */
-    protected function buildVariantName(string $title, ?string $variantTitle): string
+    protected function buildAttributes(array $optionNames, array $variant): array
     {
-        if (!$variantTitle || $variantTitle === '' || strtolower($variantTitle) === 'default title') {
-            return $title;
+        $values = [
+            $variant['option1'] ?? null,
+            $variant['option2'] ?? null,
+            $variant['option3'] ?? null,
+        ];
+
+        $attributes = [];
+        foreach ($values as $i => $value) {
+            if ($value === null || $value === '' || strtolower($value) === 'default title') {
+                continue;
+            }
+            $name = $optionNames[$i] ?? null;
+            if (!$name || strtolower($name) === 'title') {
+                continue;
+            }
+            $attributes[] = [
+                'name' => $name,
+                'value' => (string) $value,
+            ];
         }
-        return "{$title} - {$variantTitle}";
+
+        return $attributes;
     }
 
     /**

@@ -127,6 +127,7 @@ class PaymentController extends Controller
             $orderItemsData[] = [
                 'product_id' => $product->id,
                 'name' => $product->name,
+                'attributes' => $product->attributes,
                 'unit_price' => $unitPrice,
                 'qty' => $qty,
             ];
