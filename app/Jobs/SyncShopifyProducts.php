@@ -14,7 +14,7 @@ class SyncShopifyProducts implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 120;
+    public int $timeout = 600;
     public int $tries = 1;
 
     protected Store $store;
@@ -39,22 +39,31 @@ class SyncShopifyProducts implements ShouldQueue
             'X-Shopify-Access-Token' => $this->store->shopify_access_token,
         ];
 
-        $endpoint = "https://{$this->store->shopify_domain}/admin/api/2025-07/products.json";
+        $baseEndpoint = "https://{$this->store->shopify_domain}/admin/api/2025-07/products.json";
 
         // Paginação Shopify Admin API (até 250 por página).
         $seenVariantIds = [];
         $page = 1;
+        $endpoint = $baseEndpoint;
 
         while ($endpoint) {
-            $response = Http::withHeaders($headers)->get($endpoint, [
-                'limit' => 250,
-                'page_info' => null,
-            ]);
+            // A primeira página usa ?limit=250. Páginas seguintes usam a URL
+            // completa do header Link (rel="next"), que já contém page_info e
+            // limit; não devemos adicionar parâmetros extras para não corromper
+            // o cursor de paginação.
+            if ($endpoint === $baseEndpoint) {
+                $response = Http::withHeaders($headers)->get($endpoint, [
+                    'limit' => 250,
+                ]);
+            } else {
+                $response = Http::withHeaders($headers)->get($endpoint);
+            }
 
             if (!$response->successful()) {
                 Log::warning('Shopify sync falhou', [
                     'store' => $this->store->id,
                     'status' => $response->status(),
+                    'body' => $response->body(),
                 ]);
                 return;
             }
@@ -89,7 +98,7 @@ class SyncShopifyProducts implements ShouldQueue
                             'name' => $parentTitle,
                             'parent_title' => $parentTitle,
                             'attributes' => $attributes ?: null,
-                            'description' => $shopifyProduct['body_html'] ?? null,
+                            'description' => $this->truncateDescription($shopifyProduct['body_html'] ?? null),
                             'price' => $variant['price'] ?? 0,
                             'compare_at_price' => $variant['compare_at_price'] ?? null,
                             'image_url' => $imageSrc,
@@ -110,16 +119,34 @@ class SyncShopifyProducts implements ShouldQueue
 
             // Proteção contra loop infinito improvável.
             if ($page > 500) {
+                Log::warning('Shopify sync interrompido por limite de páginas', [
+                    'store_id' => $this->store->id,
+                    'pages' => $page,
+                ]);
                 break;
+            }
+
+            // Shopify Admin API REST: bucket padrão ~2 req/s. Pequena pausa
+            // entre páginas para evitar 429 e dar tempo ao banco/local.
+            if ($endpoint) {
+                usleep(500_000);
             }
         }
 
         // Marca variantes Shopify que sumiram como inativas — preserva histórico de pedido.
         if (!empty($seenVariantIds)) {
-            $this->store->products()
+            $activeVariantIds = $this->store->products()
                 ->whereNotNull('shopify_variant_id')
-                ->whereNotIn('shopify_variant_id', $seenVariantIds)
-                ->update(['is_active' => false]);
+                ->pluck('shopify_variant_id')
+                ->all();
+
+            $missingVariantIds = array_diff($activeVariantIds, $seenVariantIds);
+
+            foreach (array_chunk($missingVariantIds, 500) as $chunk) {
+                $this->store->products()
+                    ->whereIn('shopify_variant_id', $chunk)
+                    ->update(['is_active' => false]);
+            }
         }
 
         Log::info('Shopify sync concluído', [
@@ -127,6 +154,24 @@ class SyncShopifyProducts implements ShouldQueue
             'shopify_domain' => $this->store->shopify_domain,
             'variants_imported' => count($seenVariantIds),
         ]);
+    }
+
+    /**
+     * Trunca a descrição HTML para o limite seguro de LONGTEXT (4 GB é praticamente
+     * ilimitado, mas usamos um teto alto para evitar abuso de memória).
+     */
+    protected function truncateDescription(?string $description): ?string
+    {
+        if ($description === null) {
+            return null;
+        }
+
+        $maxBytes = 1_000_000; // ~1 MB
+        if (strlen($description) <= $maxBytes) {
+            return $description;
+        }
+
+        return substr($description, 0, $maxBytes);
     }
 
     /**
