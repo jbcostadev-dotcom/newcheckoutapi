@@ -48,6 +48,7 @@ class CheckoutSetting extends Model
         'card_gateway_id',
         'boleto_enabled',
         'boleto_gateway_id',
+        'default_payment_method',
     ];
 
     protected $casts = [
@@ -68,6 +69,7 @@ class CheckoutSetting extends Model
         'pix_gateway_id' => 'integer',
         'card_gateway_id' => 'integer',
         'boleto_gateway_id' => 'integer',
+        'default_payment_method' => 'string',
     ];
 
     public function store()

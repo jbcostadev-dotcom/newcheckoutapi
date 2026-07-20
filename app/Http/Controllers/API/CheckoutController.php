@@ -47,6 +47,7 @@ class CheckoutController extends Controller
             'pix_gateway_id' => null,
             'card_gateway_id' => null,
             'boleto_gateway_id' => null,
+            'default_payment_method' => 'credit_card',
         ];
     }
 

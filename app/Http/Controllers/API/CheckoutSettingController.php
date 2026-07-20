@@ -62,6 +62,7 @@ class CheckoutSettingController extends Controller
             'card_gateway_id' => 'nullable|integer|exists:gateways,id',
             'boleto_enabled' => 'boolean',
             'boleto_gateway_id' => 'nullable|integer|exists:gateways,id',
+            'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
         ]);
 
         $settings->update($validated);
