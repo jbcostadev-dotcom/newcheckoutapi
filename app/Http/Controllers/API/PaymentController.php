@@ -91,6 +91,29 @@ class PaymentController extends Controller
             return response()->json(['error' => 'No active payment gateway configured for this method'], 400);
         }
 
+        // Resolve installment rate and apply to final total for credit card.
+        $installments = (int) ($validated['installments'] ?? 1);
+        $installmentLimit = (int) ($gateway->installment_limit ?? 12);
+        if ($installments > $installmentLimit) {
+            $installments = $installmentLimit;
+        }
+        if ($installments < 1) {
+            $installments = 1;
+        }
+
+        $rate = 0.0;
+        if ($paymentMethod === 'credit_card') {
+            $type = $gateway->installment_type ?? 'default';
+            if ($type === 'custom' && is_array($gateway->installment_rates)) {
+                $rate = (float) ($gateway->installment_rates[$installments - 1] ?? 0);
+            } else {
+                $rate = (float) ($gateway->default_installment_rate ?? 3.14);
+            }
+        }
+
+        // Compound interest: total = base * (1 + rate/100)^installments
+        $interestMultiplier = pow(1 + $rate / 100, $installments);
+
         // Agrupa itens por product_id somando qty (defensivo contra duplicação).
         $grouped = [];
         foreach ($validated['items'] as $item) {
@@ -160,8 +183,13 @@ class PaymentController extends Controller
 
         $finalTotal = round($total + ($shippingPrice ?? 0), 2);
 
+        // Apply installment interest to credit card payments.
+        if ($paymentMethod === 'credit_card' && $interestMultiplier > 1) {
+            $finalTotal = round($finalTotal * $interestMultiplier, 2);
+        }
+
         // Cria pedido + itens em transação (atomicidade).
-        $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $finalTotal, $shippingMethodId, $shippingPrice) {
+        $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $finalTotal, $shippingMethodId, $shippingPrice, $installments) {
             $ship = $validated['shipping_address'] ?? [];
             $order = Order::create([
                 'store_id' => $store->id,
@@ -172,7 +200,7 @@ class PaymentController extends Controller
                 'amount' => $finalTotal,
                 'payment_method' => $validated['payment_method'],
                 'status' => Order::STATUS_PENDING,
-                'installments' => $validated['installments'] ?? 1,
+                'installments' => $installments,
                 'shipping_method_id' => $shippingMethodId,
                 'shipping_price' => $shippingPrice,
                 'shipping_cep' => $ship['cep'] ?? null,
@@ -209,12 +237,12 @@ class PaymentController extends Controller
                         'card_token' => $validated['card_token'],
                         'card_brand' => $validated['card_brand'] ?? null,
                         'card_last4' => $validated['card_last4'] ?? null,
-                        'installments' => $validated['installments'] ?? 1,
+                        'installments' => $installments,
                     ]);
                     $payload = UnipayService::buildCardPayload(
                         $order,
                         $validated['card_token'],
-                        (int) ($validated['installments'] ?? 1),
+                        $installments,
                         $postbackUrl,
                         $ip
                     );

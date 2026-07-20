@@ -34,6 +34,12 @@ class GatewayController extends Controller
             'secret_key' => 'nullable|string|max:1000',
             'is_active' => 'boolean',
             'settings' => 'nullable|array',
+            'installment_type' => 'sometimes|in:default,custom',
+            'default_installment_rate' => 'nullable|numeric|min:0|max:100',
+            'installment_rates' => 'nullable|array',
+            'installment_rates.*' => 'nullable|numeric|min:0|max:100',
+            'pre_selected_installment' => 'sometimes|integer|min:1|max:12',
+            'installment_limit' => 'sometimes|integer|min:1|max:12',
         ]);
 
         $gateway = $store->gateways()->create($validated);
@@ -55,6 +61,12 @@ class GatewayController extends Controller
             'secret_key' => 'nullable|string|max:1000',
             'is_active' => 'boolean',
             'settings' => 'nullable|array',
+            'installment_type' => 'sometimes|in:default,custom',
+            'default_installment_rate' => 'nullable|numeric|min:0|max:100',
+            'installment_rates' => 'nullable|array',
+            'installment_rates.*' => 'nullable|numeric|min:0|max:100',
+            'pre_selected_installment' => 'sometimes|integer|min:1|max:12',
+            'installment_limit' => 'sometimes|integer|min:1|max:12',
         ]);
 
         $gateway->update($validated);

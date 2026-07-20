@@ -77,16 +77,33 @@ class CheckoutController extends Controller
             if ($meta['gateway_id']) {
                 $gateway = $store->gateways()->where('id', $meta['gateway_id'])->where('is_active', true)->first();
             }
-            // Fallback: if no gateway assigned but method is enabled, try the first active gateway
             if (!$gateway && $meta['enabled']) {
                 $gateway = $store->gateways()->where('is_active', true)->first();
             }
 
-            $result[$key] = [
+            $entry = [
                 'enabled' => $meta['enabled'],
                 'gateway_provider' => $gateway?->provider,
                 'public_key' => ($gateway && $gateway->provider === 'unipay') ? $gateway->api_key : null,
             ];
+
+            if ($key === 'card' && $gateway) {
+                $installmentType = $gateway->installment_type ?? 'default';
+                $defaultRate = (float) ($gateway->default_installment_rate ?? 3.14);
+                $customRates = $gateway->installment_rates ?? array_fill(0, 12, $defaultRate);
+                $preSelected = (int) ($gateway->pre_selected_installment ?? 1);
+                $limit = (int) ($gateway->installment_limit ?? 12);
+
+                $entry['installment_config'] = [
+                    'type' => $installmentType,
+                    'default_rate' => $defaultRate,
+                    'rates' => array_values($customRates),
+                    'pre_selected' => $preSelected,
+                    'limit' => $limit,
+                ];
+            }
+
+            $result[$key] = $entry;
         }
 
         return $result;

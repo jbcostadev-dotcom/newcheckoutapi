@@ -13,11 +13,20 @@ class Gateway extends Model
         'secret_key',
         'is_active',
         'settings',
+        'installment_type',
+        'default_installment_rate',
+        'installment_rates',
+        'pre_selected_installment',
+        'installment_limit',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'settings' => 'array',
+        'default_installment_rate' => 'float',
+        'installment_rates' => 'array',
+        'pre_selected_installment' => 'integer',
+        'installment_limit' => 'integer',
     ];
 
     public function store()
