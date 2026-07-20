@@ -12,6 +12,7 @@ class Store extends Model
         'subdomain',
         'custom_domain',
         'shopify_domain',
+        'shopify_pending_domain',
         'shopify_access_token',
         'shopify_client_id',
         'shopify_client_secret',

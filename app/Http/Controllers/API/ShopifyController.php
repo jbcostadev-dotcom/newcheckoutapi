@@ -24,6 +24,7 @@ class ShopifyController extends Controller
         return response()->json([
             'connected' => $store->isShopifyConnected(),
             'shopify_domain' => $store->shopify_domain,
+            'pending_domain' => $store->shopify_pending_domain,
             'credentials_configured' => !empty($store->shopify_client_id) && !empty($store->shopify_client_secret),
             'checkout_injected' => !empty($store->shopify_injected_theme_id),
             'injected_theme_id' => $store->shopify_injected_theme_id,
@@ -41,16 +42,19 @@ class ShopifyController extends Controller
         $validated = $request->validate([
             'shopify_client_id' => 'required|string|max:255',
             'shopify_client_secret' => 'required|string|max:255',
+            'shopify_domain_input' => 'nullable|string|max:255',
         ]);
 
         $store->update([
             'shopify_client_id' => $validated['shopify_client_id'],
             'shopify_client_secret' => $validated['shopify_client_secret'],
+            'shopify_pending_domain' => $validated['shopify_domain_input'] ?? $store->shopify_pending_domain,
         ]);
 
         return response()->json([
             'message' => 'Credenciais Shopify salvas com sucesso.',
             'credentials_configured' => true,
+            'pending_domain' => $store->shopify_pending_domain,
         ]);
     }
 
@@ -186,11 +190,10 @@ class ShopifyController extends Controller
     public function install(Request $request)
     {
         $request->validate([
-            'shop' => 'required|string',
+            'shop' => 'nullable|string',
             'store_id' => 'required|integer|exists:stores,id',
         ]);
 
-        $shop = $request->shop;
         $storeId = $request->store_id;
 
         $store = Store::findOrFail($storeId);
@@ -202,6 +205,25 @@ class ShopifyController extends Controller
             ], 422);
         }
 
+        // Domínio da loja: prioriza query param `shop`; senão, usa o pending_domain salvo.
+        $shop = $request->shop ?: $store->shopify_pending_domain;
+
+        if (!$shop) {
+            return response()->json([
+                'error' => 'Informe o domínio da loja Shopify (ex: sua-loja.myshopify.com).',
+            ], 422);
+        }
+
+        // Normaliza "loja" → "loja.myshopify.com"
+        if (!str_contains($shop, '.')) {
+            $shop = $shop . '.myshopify.com';
+        }
+
+        // Persiste o pending_domain para o callback poder resolver a loja se necessário.
+        if ($store->shopify_pending_domain !== $shop) {
+            $store->update(['shopify_pending_domain' => $shop]);
+        }
+
         // redirect_uri é fixo e único por plataforma (deve estar na whitelist do app do lojista).
         $redirectUri = urlencode(config('services.shopify.redirect_uri'));
         $scopes = config('services.shopify.scopes', 'read_products,read_orders,write_themes');
@@ -211,7 +233,7 @@ class ShopifyController extends Controller
 
         $installUrl = "https://{$shop}/admin/oauth/authorize?client_id={$clientId}&scope={$scopes}&redirect_uri={$redirectUri}&state={$state}";
 
-        return response()->json(['url' => $installUrl]);
+        return redirect()->away($installUrl);
     }
 
     /**
@@ -219,6 +241,9 @@ class ShopifyController extends Controller
      */
     public function callback(Request $request)
     {
+        $frontendUrl = rtrim(config('services.shopify.frontend_url', 'https://app.bersenker.shop'), '/');
+        $integrationsUrl = $frontendUrl . '/dashboard/integrations';
+
         $code = $request->query('code');
         $shop = $request->query('shop');
         $state = $request->query('state');
@@ -227,12 +252,12 @@ class ShopifyController extends Controller
         $storeId = $stateData['store_id'] ?? null;
 
         if (!$storeId || !$code || !$shop) {
-            return response()->json(['message' => 'Invalid callback parameters'], 400);
+            return redirect()->away($integrationsUrl . '?shopify=error&message=' . urlencode('Parâmetros de callback inválidos.'));
         }
 
         $store = Store::find($storeId);
         if (!$store || !$store->shopify_client_id || !$store->shopify_client_secret) {
-            return response()->json(['message' => 'Loja ou credenciais Shopify não encontradas.'], 404);
+            return redirect()->away($integrationsUrl . '?shopify=error&message=' . urlencode('Loja ou credenciais Shopify não encontradas.'));
         }
 
         $response = Http::post("https://{$shop}/admin/oauth/access_token", [
@@ -245,7 +270,7 @@ class ShopifyController extends Controller
             $accessToken = $response->json()['access_token'] ?? null;
 
             if (!$accessToken) {
-                return response()->json(['message' => 'Token não retornado pela Shopify.'], 502);
+                return redirect()->away($integrationsUrl . '?shopify=error&message=' . urlencode('Token não retornado pela Shopify.'));
             }
 
             // Normaliza o domínio: aceita "loja.myshopify.com".
@@ -260,13 +285,12 @@ class ShopifyController extends Controller
                 ->first();
 
             if ($existing) {
-                return response()->json([
-                    'message' => 'Essa loja Shopify já está cadastrada em outra conta. Remova-a antes de integrá-la.',
-                ], 422);
+                return redirect()->away($integrationsUrl . '?shopify=error&message=' . urlencode('Essa loja Shopify já está cadastrada em outra conta. Remova-a antes de integrá-la.'));
             }
 
             $store->update([
                 'shopify_domain' => $shopDomain,
+                'shopify_pending_domain' => null,
                 'shopify_access_token' => $accessToken,
             ]);
 
@@ -274,16 +298,11 @@ class ShopifyController extends Controller
             // Injeta o snippet no tema publicado em paralelo (best-effort).
             InjectShopifyCheckout::dispatch($store);
 
-            return response()->json([
-                'message' => 'Shopify successfully connected and products are being synced.',
-                'store_id' => $store->id,
-            ]);
+            return redirect()->away($integrationsUrl . '?shopify=connected');
         }
 
-        return response()->json([
-            'message' => 'Failed to obtain access token',
-            'error' => $response->json(),
-        ], 502);
+        $errorMsg = is_array($response->json()) ? (string) json_encode($response->json()) : 'Failed to obtain access token';
+        return redirect()->away($integrationsUrl . '?shopify=error&message=' . urlencode($errorMsg));
     }
 
     /**

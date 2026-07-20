@@ -46,6 +46,8 @@ return [
         'api_version' => env('SHOPIFY_API_VERSION', '2025-07'),
         // URL base exposta ao snippet injetado no tema (pública). Default = APP_URL.
         'public_api_base' => env('SHOPIFY_PUBLIC_API_BASE', env('APP_URL')),
+        // URL do painel (frontend) para onde o callback Shopify redireciona o lojista.
+        'frontend_url' => env('FRONTEND_URL', 'https://app.bersenker.shop'),
     ],
 
     // ── Unipay (FastSoft Brasil) ──────────────────────────────────────
