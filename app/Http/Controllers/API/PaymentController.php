@@ -4,15 +4,20 @@ namespace App\Http\Controllers\API;
 
 use App\Exceptions\UnipayException;
 use App\Http\Controllers\Controller;
+use App\Models\CardPaymentAttempt;
 use App\Models\Store;
 use App\Models\Order;
 use App\Services\UnipayService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
+    private const MAX_FAILED_CARD_ATTEMPTS = 3;
+    private const FAILED_ATTEMPTS_WINDOW_HOURS = 24;
+
     /**
      * Processa um checkout com 1 ou N produtos via Unipay (FastSoft Brasil).
      *
@@ -29,8 +34,8 @@ class PaymentController extends Controller
             'items.*.qty' => 'nullable|integer|min:1',
             'customer_name' => 'required|string',
             'customer_email' => 'required|email',
-            'customer_document' => 'nullable|string',
-            'customer_phone' => 'nullable|string',
+            'customer_document' => 'required|string|min:11|max:14',
+            'customer_phone' => 'required|string|min:10|max:20',
             'payment_method' => 'required|in:pix,credit_card,boleto',
             'card_number' => 'required_if:payment_method,credit_card|string|min:13|max:19',
             'card_holder' => 'required_if:payment_method,credit_card|string|min:3|max:100',
@@ -40,12 +45,12 @@ class PaymentController extends Controller
             'card_brand' => 'nullable|string|max:30',
             'card_last4' => 'nullable|string|max:4',
             'shipping_method_id' => 'nullable|integer',
-            'shipping_address' => 'nullable|array',
-            'shipping_address.cep' => 'nullable|string|max:9',
-            'shipping_address.logradouro' => 'nullable|string|max:255',
-            'shipping_address.numero' => 'nullable|string|max:30',
+            'shipping_address' => 'required|array',
+            'shipping_address.cep' => 'required|string|min:8|max:9',
+            'shipping_address.logradouro' => 'required|string|min:3|max:255',
+            'shipping_address.numero' => 'required|string|min:1|max:30',
             'shipping_address.complemento' => 'nullable|string|max:120',
-            'shipping_address.bairro' => 'nullable|string|max:120',
+            'shipping_address.bairro' => 'required|string|min:2|max:120',
             'shipping_address.cidade' => 'nullable|string|max:120',
             'shipping_address.uf' => 'nullable|string|max:2',
         ]);
@@ -69,6 +74,33 @@ class PaymentController extends Controller
 
         if (!($methodEnabledMap[$paymentMethod] ?? false)) {
             return response()->json(['error' => 'Payment method is not enabled'], 400);
+        }
+
+        // Validações antecipadas de cartão: Luhn, validade e CVV por bandeira.
+        if ($paymentMethod === 'credit_card') {
+            $cardValidationError = $this->validateCardData($validated);
+            if ($cardValidationError) {
+                return response()->json([
+                    'error' => $cardValidationError['message'],
+                    'field' => $cardValidationError['field'],
+                ], 422);
+            }
+
+            $duplicate = $this->getDuplicateFailedAttempt($validated);
+            if ($duplicate) {
+                return response()->json([
+                    'error' => $duplicate->error_message ?: 'Este cartão não foi autorizado. Verifique os dados ou tente outro cartão.',
+                    'field' => 'card_number',
+                ], 422);
+            }
+
+            $failedAttempts = $this->countRecentFailedAttempts($validated);
+            if ($failedAttempts >= self::MAX_FAILED_CARD_ATTEMPTS) {
+                return response()->json([
+                    'error' => 'Você atingiu o limite de 3 tentativas de pagamento com cartão. Tente novamente mais tarde.',
+                    'field' => 'card_number',
+                ], 422);
+            }
         }
 
         // Resolve gateway for this payment method.
@@ -241,15 +273,19 @@ class PaymentController extends Controller
                     $expMonth = (int) $expMonth;
                     $expYear = (int) ('20' . $expYear);
 
+                    $cardNumberDigits = preg_replace('/\D/', '', $validated['card_number']);
+                    $cardBrand = $validated['card_brand'] ?? $this->guessCardBrand($cardNumberDigits);
+                    $cardLast4 = $validated['card_last4'] ?? substr($cardNumberDigits, -4);
+
                     $order->update([
-                        'card_brand' => $validated['card_brand'] ?? null,
-                        'card_last4' => $validated['card_last4'] ?? null,
+                        'card_brand' => $cardBrand,
+                        'card_last4' => $cardLast4,
                         'installments' => $installments,
                     ]);
                     $payload = UnipayService::buildCardPayload(
                         $order,
                         [
-                            'number' => preg_replace('/\D/', '', $validated['card_number']),
+                            'number' => $cardNumberDigits,
                             'holderName' => strtoupper(trim($validated['card_holder'])),
                             'expirationMonth' => $expMonth,
                             'expirationYear' => $expYear,
@@ -270,6 +306,10 @@ class PaymentController extends Controller
             }
 
             $result = $service->createTransaction($payload);
+
+            if ($paymentMethod === 'credit_card') {
+                $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_SUCCESS, null, $result, $ip);
+            }
         } catch (UnipayException $e) {
             Log::error('Unipay createTransaction falhou', [
                 'order_id' => $order->id,
@@ -279,6 +319,10 @@ class PaymentController extends Controller
             ]);
 
             $order->update(['status' => Order::STATUS_FAILED]);
+
+            if ($paymentMethod === 'credit_card') {
+                $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $e->getMessage(), $e->body, $ip);
+            }
 
             return response()->json([
                 'error' => 'Falha ao criar transação na Unipay',
@@ -467,5 +511,194 @@ class PaymentController extends Controller
         }
 
         return response()->json(['received' => true]);
+    }
+
+    /**
+     * Valida número (Luhn), validade (mês seguinte ao atual) e CVV por bandeira.
+     *
+     * @return array{field: string, message: string}|null
+     */
+    private function validateCardData(array $validated): ?array
+    {
+        $number = preg_replace('/\D/', '', $validated['card_number'] ?? '');
+
+        if (strlen($number) < 13 || strlen($number) > 19) {
+            return ['field' => 'card_number', 'message' => 'Número do cartão inválido.'];
+        }
+
+        if (!$this->isLuhnValid($number)) {
+            return ['field' => 'card_number', 'message' => 'Cartão inválido.'];
+        }
+
+        $brand = $this->guessCardBrand($number);
+        $cvv = $validated['card_cvv'] ?? '';
+        $expectedCvvLength = $brand === 'AMEX' ? 4 : 3;
+
+        if (strlen($cvv) !== $expectedCvvLength) {
+            return ['field' => 'card_cvv', 'message' => 'CVV inválido.'];
+        }
+
+        $expiry = $validated['card_expiry'] ?? '';
+        if (!preg_match('/^\d{2}\/\d{2}$/', $expiry)) {
+            return ['field' => 'card_expiry', 'message' => 'Data de validade inválida.'];
+        }
+
+        [$expMonth, $expYear] = explode('/', $expiry);
+        $expMonth = (int) $expMonth;
+        $expYear = (int) ('20' . $expYear);
+
+        if ($expMonth < 1 || $expMonth > 12) {
+            return ['field' => 'card_expiry', 'message' => 'Mês de validade inválido.'];
+        }
+
+        $minDate = Carbon::now()->addMonthNoOverflow()->startOfMonth();
+        $expDate = Carbon::create($expYear, $expMonth, 1)->startOfMonth();
+
+        if ($expDate->lessThan($minDate)) {
+            return ['field' => 'card_expiry', 'message' => 'A validade do cartão deve ser de pelo menos um mês após o mês atual.'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Algoritmo de Luhn para validar números de cartão.
+     */
+    private function isLuhnValid(string $number): bool
+    {
+        $sum = 0;
+        $alternate = false;
+
+        for ($i = strlen($number) - 1; $i >= 0; $i--) {
+            $n = (int) $number[$i];
+
+            if ($alternate) {
+                $n *= 2;
+                if ($n > 9) {
+                    $n -= 9;
+                }
+            }
+
+            $sum += $n;
+            $alternate = !$alternate;
+        }
+
+        return $sum % 10 === 0;
+    }
+
+    /**
+     * Identifica a bandeira a partir do BIN (apenas heurística para exibição).
+     */
+    private function guessCardBrand(string $number): ?string
+    {
+        if (preg_match('/^3[47]/', $number)) {
+            return 'AMEX';
+        }
+
+        if (preg_match('/^(6011|65|644|645|646|647|648|649|622)/', $number)) {
+            return 'DISCOVER';
+        }
+
+        if (preg_match('/^(4011|4312|4389|4514|4576|5041|5066|5067|509|6277|6362|6363|650|6516|6550)/', $number)) {
+            return 'ELO';
+        }
+
+        if (preg_match('/^4/', $number)) {
+            return 'VISA';
+        }
+
+        if (preg_match('/^(5[1-5]|2[2-7])/', $number)) {
+            return 'MASTERCARD';
+        }
+
+        return null;
+    }
+
+    /**
+     * Busca uma tentativa falha com os mesmos dados de cartão, validade e CVV.
+     * A restrição é por CPF do cliente; se o CPF não estiver disponível, usa o e-mail.
+     */
+    private function getDuplicateFailedAttempt(array $validated): ?CardPaymentAttempt
+    {
+        $number = preg_replace('/\D/', '', $validated['card_number'] ?? '');
+
+        $query = CardPaymentAttempt::where('card_fingerprint', $this->cardFingerprint($number))
+            ->where('card_expiry', $validated['card_expiry'])
+            ->where('card_cvv_hash', $this->cvvHash($validated['card_cvv'] ?? ''))
+            ->where('status', CardPaymentAttempt::STATUS_FAILED);
+
+        if (!empty($validated['customer_document'])) {
+            $query->where('customer_document', $validated['customer_document']);
+        } else {
+            $query->where('customer_email', $validated['customer_email']);
+        }
+
+        return $query->latest()->first();
+    }
+
+    /**
+     * Conta tentativas falhas do cliente nas últimas N horas.
+     * A restrição é por CPF do cliente; se o CPF não estiver disponível, usa o e-mail.
+     */
+    private function countRecentFailedAttempts(array $validated): int
+    {
+        $query = CardPaymentAttempt::where('status', CardPaymentAttempt::STATUS_FAILED)
+            ->where('created_at', '>=', Carbon::now()->subHours(self::FAILED_ATTEMPTS_WINDOW_HOURS));
+
+        if (!empty($validated['customer_document'])) {
+            $query->where('customer_document', $validated['customer_document']);
+        } else {
+            $query->where('customer_email', $validated['customer_email']);
+        }
+
+        return $query->count();
+    }
+
+    /**
+     * Persiste uma tentativa de pagamento com cartão.
+     */
+    private function recordCardAttempt(
+        array $validated,
+        Store $store,
+        ?Order $order,
+        string $status,
+        ?string $errorMessage = null,
+        ?array $gatewayResponse = null,
+        ?string $ip = null
+    ): CardPaymentAttempt {
+        $number = preg_replace('/\D/', '', $validated['card_number'] ?? '');
+        $brand = $validated['card_brand'] ?? $this->guessCardBrand($number);
+
+        return CardPaymentAttempt::create([
+            'store_id' => $store->id,
+            'order_id' => $order?->id,
+            'customer_email' => $validated['customer_email'],
+            'customer_document' => $validated['customer_document'] ?? null,
+            'card_fingerprint' => $this->cardFingerprint($number),
+            'card_last4' => $validated['card_last4'] ?? substr($number, -4),
+            'card_expiry' => $validated['card_expiry'] ?? '',
+            'card_cvv_hash' => $this->cvvHash($validated['card_cvv'] ?? ''),
+            'card_brand' => $brand,
+            'status' => $status,
+            'error_message' => $errorMessage,
+            'gateway_response' => $gatewayResponse,
+            'ip_address' => $ip,
+        ]);
+    }
+
+    /**
+     * Fingerprint segura (SHA-256) do número do cartão.
+     */
+    private function cardFingerprint(string $number): string
+    {
+        return hash('sha256', $number);
+    }
+
+    /**
+     * Hash seguro (SHA-256) do CVV.
+     */
+    private function cvvHash(string $cvv): string
+    {
+        return hash('sha256', $cvv);
     }
 }
