@@ -211,10 +211,13 @@ class UnipayService
 
     /**
      * Payload para Cartão de Crédito.
+     *
+     * A FastSoft espera os dados do cartão diretamente no objeto card
+     * e installments no root do payload.
      */
     public static function buildCardPayload(
         Order $order,
-        string $cardToken,
+        array $cardData,
         int $installments = 1,
         string $postbackUrl,
         ?string $ip = null,
@@ -222,9 +225,13 @@ class UnipayService
         return array_merge(self::baseOrderData($order, $postbackUrl, $ip), [
             'amount' => (int) round((float) $order->amount * 100),
             'paymentMethod' => 'CREDIT_CARD',
+            'installments' => $installments,
             'card' => [
-                'token' => $cardToken,
-                'installments' => $installments,
+                'number' => $cardData['number'],
+                'holderName' => $cardData['holderName'],
+                'expirationMonth' => (int) $cardData['expirationMonth'],
+                'expirationYear' => (int) $cardData['expirationYear'],
+                'cvv' => $cardData['cvv'],
             ],
         ]);
     }

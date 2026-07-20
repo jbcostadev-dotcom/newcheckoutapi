@@ -18,7 +18,7 @@ class PaymentController extends Controller
      *
      * Payload:
      *   domain, items: [{product_id, qty}], customer_*, payment_method (pix|credit_card|boleto)
-     *   credit_card: card_token, installments, card_brand?, card_last4?
+     *   credit_card: card_number, card_holder, card_expiry (MM/AA), card_cvv, installments, card_brand?, card_last4?
      */
     public function process(Request $request)
     {
@@ -32,7 +32,10 @@ class PaymentController extends Controller
             'customer_document' => 'nullable|string',
             'customer_phone' => 'nullable|string',
             'payment_method' => 'required|in:pix,credit_card,boleto',
-            'card_token' => 'required_if:payment_method,credit_card|string|max:500',
+            'card_number' => 'required_if:payment_method,credit_card|string|min:13|max:19',
+            'card_holder' => 'required_if:payment_method,credit_card|string|min:3|max:100',
+            'card_expiry' => 'required_if:payment_method,credit_card|string|regex:/^\d{2}\/\d{2}$/',
+            'card_cvv' => 'required_if:payment_method,credit_card|string|min:3|max:4',
             'installments' => 'nullable|integer|min:1|max:12',
             'card_brand' => 'nullable|string|max:30',
             'card_last4' => 'nullable|string|max:4',
@@ -230,18 +233,28 @@ class PaymentController extends Controller
                     break;
 
                 case 'credit_card':
-                    if (empty($validated['card_token'])) {
-                        return response()->json(['error' => 'card_token é obrigatório para credit_card'], 422);
+                    if (empty($validated['card_number']) || empty($validated['card_holder']) || empty($validated['card_expiry']) || empty($validated['card_cvv'])) {
+                        return response()->json(['error' => 'Dados do cartão são obrigatórios para credit_card'], 422);
                     }
+
+                    [$expMonth, $expYear] = explode('/', $validated['card_expiry']);
+                    $expMonth = (int) $expMonth;
+                    $expYear = (int) ('20' . $expYear);
+
                     $order->update([
-                        'card_token' => $validated['card_token'],
                         'card_brand' => $validated['card_brand'] ?? null,
                         'card_last4' => $validated['card_last4'] ?? null,
                         'installments' => $installments,
                     ]);
                     $payload = UnipayService::buildCardPayload(
                         $order,
-                        $validated['card_token'],
+                        [
+                            'number' => preg_replace('/\D/', '', $validated['card_number']),
+                            'holderName' => strtoupper(trim($validated['card_holder'])),
+                            'expirationMonth' => $expMonth,
+                            'expirationYear' => $expYear,
+                            'cvv' => $validated['card_cvv'],
+                        ],
                         $installments,
                         $postbackUrl,
                         $ip
