@@ -40,6 +40,7 @@ class GatewayController extends Controller
             'installment_rates.*' => 'nullable|numeric|min:0|max:100',
             'pre_selected_installment' => 'sometimes|integer|min:1|max:12',
             'installment_limit' => 'sometimes|integer|min:1|max:12',
+            'interest_free_installments' => 'sometimes|integer|min:1|max:12',
         ]);
 
         $gateway = $store->gateways()->create($validated);
@@ -67,6 +68,7 @@ class GatewayController extends Controller
             'installment_rates.*' => 'nullable|numeric|min:0|max:100',
             'pre_selected_installment' => 'sometimes|integer|min:1|max:12',
             'installment_limit' => 'sometimes|integer|min:1|max:12',
+            'interest_free_installments' => 'sometimes|integer|min:1|max:12',
         ]);
 
         $gateway->update($validated);

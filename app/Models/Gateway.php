@@ -18,6 +18,7 @@ class Gateway extends Model
         'installment_rates',
         'pre_selected_installment',
         'installment_limit',
+        'interest_free_installments',
     ];
 
     protected $casts = [
@@ -27,6 +28,7 @@ class Gateway extends Model
         'installment_rates' => 'array',
         'pre_selected_installment' => 'integer',
         'installment_limit' => 'integer',
+        'interest_free_installments' => 'integer',
     ];
 
     public function store()

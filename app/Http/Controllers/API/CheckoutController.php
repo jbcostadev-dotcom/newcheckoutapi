@@ -93,6 +93,7 @@ class CheckoutController extends Controller
                 $customRates = $gateway->installment_rates ?? array_fill(0, 12, $defaultRate);
                 $preSelected = (int) ($gateway->pre_selected_installment ?? 1);
                 $limit = (int) ($gateway->installment_limit ?? 12);
+                $interestFree = (int) ($gateway->interest_free_installments ?? 1);
 
                 $entry['installment_config'] = [
                     'type' => $installmentType,
@@ -100,6 +101,7 @@ class CheckoutController extends Controller
                     'rates' => array_values($customRates),
                     'pre_selected' => $preSelected,
                     'limit' => $limit,
+                    'interest_free' => $interestFree,
                 ];
             }
 

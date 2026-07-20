@@ -102,7 +102,7 @@ class PaymentController extends Controller
         }
 
         $rate = 0.0;
-        if ($paymentMethod === 'credit_card') {
+        if ($paymentMethod === 'credit_card' && $installments > ($gateway->interest_free_installments ?? 1)) {
             $type = $gateway->installment_type ?? 'default';
             if ($type === 'custom' && is_array($gateway->installment_rates)) {
                 $rate = (float) ($gateway->installment_rates[$installments - 1] ?? 0);
