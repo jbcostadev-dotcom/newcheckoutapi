@@ -7,22 +7,33 @@ use Illuminate\Database\Eloquent\Model;
 class Order extends Model
 {
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_PROCESSING = 'processing';
+
     public const STATUS_WAITING_PAYMENT = 'waiting_payment';
+
     public const STATUS_IN_ANALYSIS = 'in_analysis';
+
     public const STATUS_AUTHORIZED = 'authorized';
+
     public const STATUS_PAID = 'paid';
+
     public const STATUS_FAILED = 'failed';
+
     public const STATUS_REFUSED = 'refused';
+
     public const STATUS_CANCELED = 'canceled';
+
     public const STATUS_REFUNDED = 'refunded';
+
     public const STATUS_IN_PROTEST = 'in_protest';
+
     public const STATUS_CHARGEDBACK = 'chargedback';
 
     protected $fillable = [
         'store_id', 'customer_id', 'customer_name', 'customer_email',
         'customer_phone', 'customer_document', 'amount', 'payment_method',
-        'status', 'gateway_transaction_id', 'pix_qrcode', 'pix_copia_cola',
+        'status', 'gateway_transaction_id', 'shopify_order_id', 'pix_qrcode', 'pix_copia_cola',
         'card_brand', 'card_last4', 'card_token', 'installments',
         'boleto_url', 'boleto_barcode', 'boleto_digitable_line', 'gateway_expires_at',
         'shipping_cep', 'shipping_logradouro', 'shipping_numero',
@@ -73,7 +84,7 @@ class Order extends Model
      */
     public static function mapFastSoftStatus(?string $status): ?string
     {
-        if (!$status) {
+        if (! $status) {
             return null;
         }
 

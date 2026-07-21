@@ -40,8 +40,8 @@ return [
     // salvas em stores.shopify_client_id / shopify_client_secret.
     // Aqui fica apenas a config global do redirect_uri e dos escopos.
     'shopify' => [
-        'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders,write_themes,read_customers,write_customers'),
-        'redirect_uri' => rtrim(env('APP_URL', 'https://' . env('API_DOMAIN', 'api.bersenker.shop')), '/') . '/api/shopify/callback',
+        'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders,write_orders,write_themes,read_customers,write_customers'),
+        'redirect_uri' => rtrim(env('APP_URL', 'https://'.env('API_DOMAIN', 'api.bersenker.shop')), '/').'/api/shopify/callback',
         // Versão da Admin API REST usada nas chamadas de tema/assets.
         'api_version' => env('SHOPIFY_API_VERSION', '2025-07'),
         // URL base exposta ao snippet injetado no tema (pública). Default = APP_URL.
@@ -56,7 +56,7 @@ return [
     // Aqui permanecem apenas as URLs globais (API REST + SDK JS client-side).
     'unipay' => [
         'api_url' => env('UNIPAY_API_URL', 'https://api.fastsoftbrasil.com'),
-        'js_url'  => env('UNIPAY_JS_URL', 'https://js.fastsoftbrasil.com/security.js'),
+        'js_url' => env('UNIPAY_JS_URL', 'https://js.fastsoftbrasil.com/security.js'),
     ],
 
     // ── Domínios do projeto ───────────────────────────────────────────

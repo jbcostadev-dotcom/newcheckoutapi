@@ -5,10 +5,10 @@ namespace App\Http\Controllers\API;
 use App\Exceptions\UnipayException;
 use App\Http\Controllers\Controller;
 use App\Models\CardPaymentAttempt;
-use App\Models\Customer;
-use App\Models\Store;
 use App\Models\Order;
+use App\Models\Store;
 use App\Services\ShopifyCustomerSync;
+use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 class PaymentController extends Controller
 {
     private const MAX_FAILED_CARD_ATTEMPTS = 3;
+
     private const FAILED_ATTEMPTS_WINDOW_HOURS = 24;
 
     /**
@@ -59,7 +60,7 @@ class PaymentController extends Controller
 
         $store = Store::resolveByDomain($validated['domain']);
 
-        if (!$store) {
+        if (! $store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
 
@@ -74,7 +75,7 @@ class PaymentController extends Controller
             'boleto' => $settings->boleto_enabled ?? false,
         ];
 
-        if (!($methodEnabledMap[$paymentMethod] ?? false)) {
+        if (! ($methodEnabledMap[$paymentMethod] ?? false)) {
             return response()->json(['error' => 'Payment method is not enabled'], 400);
         }
 
@@ -120,11 +121,11 @@ class PaymentController extends Controller
         }
 
         // Fallback: first active gateway
-        if (!$gateway) {
+        if (! $gateway) {
             $gateway = $store->gateways()->where('is_active', true)->first();
         }
 
-        if (!$gateway || !$gateway->secret_key) {
+        if (! $gateway || ! $gateway->secret_key) {
             return response()->json(['error' => 'No active payment gateway configured for this method'], 400);
         }
 
@@ -180,7 +181,7 @@ class PaymentController extends Controller
 
         foreach ($grouped as $pid => $qty) {
             $product = $products->get($pid);
-            if (!$product) {
+            if (! $product) {
                 return response()->json(['error' => "Product {$pid} not found or inactive"], 404);
             }
             $unitPrice = (float) $product->price;
@@ -206,7 +207,7 @@ class PaymentController extends Controller
                 ->where('is_active', true)
                 ->first();
 
-            if (!$shippingMethod) {
+            if (! $shippingMethod) {
                 return response()->json(['error' => 'Shipping method not found or inactive'], 400);
             }
 
@@ -231,7 +232,7 @@ class PaymentController extends Controller
 
             // Vincula (ou cria) o cliente pelo email + loja para manter histórico.
             $customer = $store->customers()->where('email', $validated['customer_email'])->first();
-            if (!$customer) {
+            if (! $customer) {
                 $customer = $store->customers()->create([
                     'name' => $validated['customer_name'],
                     'email' => $validated['customer_email'],
@@ -249,11 +250,11 @@ class PaymentController extends Controller
                 // Atualiza campos em branco preservando dados já preenchidos.
                 $update = [];
                 foreach (['phone' => 'customer_phone', 'document' => 'customer_document'] as $field => $key) {
-                    if (empty($customer->{$field}) && !empty($validated[$key])) {
+                    if (empty($customer->{$field}) && ! empty($validated[$key])) {
                         $update[$field] = $validated[$key];
                     }
                 }
-                if (!empty($ship['cep']) && empty($customer->zip)) {
+                if (! empty($ship['cep']) && empty($customer->zip)) {
                     $update['zip'] = $ship['cep'] ?? null;
                     $update['street'] = $ship['logradouro'] ?? null;
                     $update['number'] = $ship['numero'] ?? null;
@@ -262,7 +263,7 @@ class PaymentController extends Controller
                     $update['city'] = $ship['cidade'] ?? null;
                     $update['uf'] = $ship['uf'] ?? null;
                 }
-                if (!empty($update)) {
+                if (! empty($update)) {
                     $customer->update($update);
                 }
             }
@@ -301,7 +302,7 @@ class PaymentController extends Controller
             $customer = $order->customer;
             if ($customer && $store->isShopifyConnected()) {
                 app(ShopifyCustomerSync::class)->sync($store, $customer);
-                if (!empty($validated['shipping_address']['cep'])) {
+                if (! empty($validated['shipping_address']['cep'])) {
                     app(ShopifyCustomerSync::class)->updateAddress($store, $customer->fresh());
                 }
             }
@@ -312,8 +313,21 @@ class PaymentController extends Controller
             ]);
         }
 
+        // Cria o pedido na Shopify como pendente (financial_status=pending) — best effort.
+        // Necessário scope `write_orders` no app Shopify da loja.
+        try {
+            if ($store->isShopifyConnected()) {
+                app(ShopifyOrderSync::class)->create($store, $order->fresh());
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Shopify order create no payment falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         $service = new UnipayService($gateway);
-        $postbackUrl = rtrim(config('app.url'), '/') . '/api/webhook/unipay';
+        $postbackUrl = rtrim(config('app.url'), '/').'/api/webhook/unipay';
         $ip = $request->ip();
 
         try {
@@ -329,7 +343,7 @@ class PaymentController extends Controller
 
                     [$expMonth, $expYear] = explode('/', $validated['card_expiry']);
                     $expMonth = (int) $expMonth;
-                    $expYear = (int) ('20' . $expYear);
+                    $expYear = (int) ('20'.$expYear);
 
                     $cardNumberDigits = preg_replace('/\D/', '', $validated['card_number']);
                     $cardBrand = $validated['card_brand'] ?? $this->guessCardBrand($cardNumberDigits);
@@ -426,10 +440,10 @@ class PaymentController extends Controller
         // PIX: qrcode (copia e cola) + expiração.
         $pixData = $result['pix'] ?? $result['data']['pix'] ?? null;
         if (is_array($pixData)) {
-            if (!empty($pixData['qrcode'])) {
+            if (! empty($pixData['qrcode'])) {
                 $updateData['pix_copia_cola'] = $pixData['qrcode'];
             }
-            if (!empty($pixData['expirationDate'])) {
+            if (! empty($pixData['expirationDate'])) {
                 $updateData['gateway_expires_at'] = $pixData['expirationDate'];
             }
         }
@@ -437,16 +451,16 @@ class PaymentController extends Controller
         // Boleto: url + barcode + linha digitável.
         $boletoData = $result['boleto'] ?? $result['data']['boleto'] ?? null;
         if (is_array($boletoData)) {
-            if (!empty($boletoData['url'])) {
+            if (! empty($boletoData['url'])) {
                 $updateData['boleto_url'] = $boletoData['url'];
             }
-            if (!empty($boletoData['barcode'])) {
+            if (! empty($boletoData['barcode'])) {
                 $updateData['boleto_barcode'] = $boletoData['barcode'];
             }
-            if (!empty($boletoData['digitableLine'])) {
+            if (! empty($boletoData['digitableLine'])) {
                 $updateData['boleto_digitable_line'] = $boletoData['digitableLine'];
             }
-            if (!empty($boletoData['expirationDate'])) {
+            if (! empty($boletoData['expirationDate'])) {
                 $updateData['gateway_expires_at'] = $boletoData['expirationDate'];
             }
         }
@@ -454,17 +468,20 @@ class PaymentController extends Controller
         // Cartão: brand + last4 se retornados.
         $cardData = $result['card'] ?? $result['data']['card'] ?? null;
         if (is_array($cardData)) {
-            if (!empty($cardData['brand'])) {
+            if (! empty($cardData['brand'])) {
                 $updateData['card_brand'] = $cardData['brand'];
             }
-            if (!empty($cardData['lastDigits'])) {
+            if (! empty($cardData['lastDigits'])) {
                 $updateData['card_last4'] = $cardData['lastDigits'];
             }
         }
 
-        if (!empty($updateData)) {
+        if (! empty($updateData)) {
             $order->update($updateData);
         }
+
+        // Se a Unipay já retornou "paid", marca o pedido Shopify como pago.
+        $this->syncShopifyPaidIfPaid($store, $order->fresh());
 
         return response()->json([
             'order_id' => $order->id,
@@ -490,7 +507,7 @@ class PaymentController extends Controller
     {
         $order = Order::with('store')->find($orderId);
 
-        if (!$order) {
+        if (! $order) {
             return response()->json(['error' => 'Order not found'], 404);
         }
 
@@ -529,13 +546,14 @@ class PaymentController extends Controller
         $transactionId = $data['id'] ?? $payload['objectId'] ?? $payload['transaction_id'] ?? null;
         $status = $data['status'] ?? $payload['status'] ?? null;
 
-        if (!$transactionId) {
+        if (! $transactionId) {
             return response()->json(['error' => 'Invalid payload: missing transaction id'], 400);
         }
 
-        $order = Order::where('gateway_transaction_id', (string) $transactionId)->first();
+        $order = Order::with('store')->where('gateway_transaction_id', (string) $transactionId)->first();
 
         if ($order) {
+            $previousStatus = $order->status;
             $mapped = Order::mapFastSoftStatus($status);
             if ($mapped) {
                 $order->update(['status' => $mapped]);
@@ -546,42 +564,48 @@ class PaymentController extends Controller
 
             $pixData = $data['pix'] ?? null;
             if (is_array($pixData)) {
-                if (!empty($pixData['qrcode']) && !$order->pix_copia_cola) {
+                if (! empty($pixData['qrcode']) && ! $order->pix_copia_cola) {
                     $extra['pix_copia_cola'] = $pixData['qrcode'];
                 }
-                if (!empty($pixData['expirationDate']) && !$order->gateway_expires_at) {
+                if (! empty($pixData['expirationDate']) && ! $order->gateway_expires_at) {
                     $extra['gateway_expires_at'] = $pixData['expirationDate'];
                 }
             }
 
             $boletoData = $data['boleto'] ?? null;
             if (is_array($boletoData)) {
-                if (!empty($boletoData['url']) && !$order->boleto_url) {
+                if (! empty($boletoData['url']) && ! $order->boleto_url) {
                     $extra['boleto_url'] = $boletoData['url'];
                 }
-                if (!empty($boletoData['barcode']) && !$order->boleto_barcode) {
+                if (! empty($boletoData['barcode']) && ! $order->boleto_barcode) {
                     $extra['boleto_barcode'] = $boletoData['barcode'];
                 }
-                if (!empty($boletoData['digitableLine']) && !$order->boleto_digitable_line) {
+                if (! empty($boletoData['digitableLine']) && ! $order->boleto_digitable_line) {
                     $extra['boleto_digitable_line'] = $boletoData['digitableLine'];
                 }
-                if (!empty($boletoData['expirationDate']) && !$order->gateway_expires_at) {
+                if (! empty($boletoData['expirationDate']) && ! $order->gateway_expires_at) {
                     $extra['gateway_expires_at'] = $boletoData['expirationDate'];
                 }
             }
 
             $cardData = $data['card'] ?? null;
             if (is_array($cardData)) {
-                if (!empty($cardData['brand']) && !$order->card_brand) {
+                if (! empty($cardData['brand']) && ! $order->card_brand) {
                     $extra['card_brand'] = $cardData['brand'];
                 }
-                if (!empty($cardData['lastDigits']) && !$order->card_last4) {
+                if (! empty($cardData['lastDigits']) && ! $order->card_last4) {
                     $extra['card_last4'] = $cardData['lastDigits'];
                 }
             }
 
-            if (!empty($extra)) {
+            if (! empty($extra)) {
                 $order->update($extra);
+            }
+
+            // Transicionou para pago agora → marca o pedido Shopify como paid.
+            $freshOrder = $order->fresh();
+            if ($freshOrder->isPaid() && $previousStatus !== Order::STATUS_PAID) {
+                $this->syncShopifyPaidIfPaid($freshOrder->store, $freshOrder);
             }
         }
 
@@ -601,7 +625,7 @@ class PaymentController extends Controller
             return ['field' => 'card_number', 'message' => 'Número do cartão inválido.'];
         }
 
-        if (!$this->isLuhnValid($number)) {
+        if (! $this->isLuhnValid($number)) {
             return ['field' => 'card_number', 'message' => 'Cartão inválido.'];
         }
 
@@ -614,13 +638,13 @@ class PaymentController extends Controller
         }
 
         $expiry = $validated['card_expiry'] ?? '';
-        if (!preg_match('/^\d{2}\/\d{2}$/', $expiry)) {
+        if (! preg_match('/^\d{2}\/\d{2}$/', $expiry)) {
             return ['field' => 'card_expiry', 'message' => 'Data de validade inválida.'];
         }
 
         [$expMonth, $expYear] = explode('/', $expiry);
         $expMonth = (int) $expMonth;
-        $expYear = (int) ('20' . $expYear);
+        $expYear = (int) ('20'.$expYear);
 
         if ($expMonth < 1 || $expMonth > 12) {
             return ['field' => 'card_expiry', 'message' => 'Mês de validade inválido.'];
@@ -655,7 +679,7 @@ class PaymentController extends Controller
             }
 
             $sum += $n;
-            $alternate = !$alternate;
+            $alternate = ! $alternate;
         }
 
         return $sum % 10 === 0;
@@ -702,7 +726,7 @@ class PaymentController extends Controller
             ->where('card_cvv_hash', $this->cvvHash($validated['card_cvv'] ?? ''))
             ->where('status', CardPaymentAttempt::STATUS_FAILED);
 
-        if (!empty($validated['customer_document'])) {
+        if (! empty($validated['customer_document'])) {
             $query->where('customer_document', $validated['customer_document']);
         } else {
             $query->where('customer_email', $validated['customer_email']);
@@ -720,7 +744,7 @@ class PaymentController extends Controller
         $query = CardPaymentAttempt::where('status', CardPaymentAttempt::STATUS_FAILED)
             ->where('created_at', '>=', Carbon::now()->subHours(self::FAILED_ATTEMPTS_WINDOW_HOURS));
 
-        if (!empty($validated['customer_document'])) {
+        if (! empty($validated['customer_document'])) {
             $query->where('customer_document', $validated['customer_document']);
         } else {
             $query->where('customer_email', $validated['customer_email']);
@@ -775,5 +799,27 @@ class PaymentController extends Controller
     private function cvvHash(string $cvv): string
     {
         return hash('sha256', $cvv);
+    }
+
+    /**
+     * Marca o pedido como pago na Shopify (best-effort) quando o pedido
+     * interno já está pago. Necessário scope `write_orders` no app Shopify.
+     */
+    private function syncShopifyPaidIfPaid(?Store $store, Order $order): void
+    {
+        if (! $store || ! $order->isPaid()) {
+            return;
+        }
+
+        try {
+            if ($store->isShopifyConnected()) {
+                app(ShopifyOrderSync::class)->markAsPaid($store, $order);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Shopify order markAsPaid falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

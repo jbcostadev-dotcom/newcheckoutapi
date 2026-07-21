@@ -4,8 +4,9 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
-use App\Models\Store;
+use App\Services\ShopifyOrderSync;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
@@ -75,7 +76,7 @@ class OrderController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('customer_name', 'like', "%{$search}%")
-                  ->orWhere('customer_email', 'like', "%{$search}%");
+                    ->orWhere('customer_email', 'like', "%{$search}%");
             });
         }
 
@@ -107,7 +108,23 @@ class OrderController extends Controller
             'status' => 'required|in:pending,paid,failed,refunded',
         ]);
 
+        $previousStatus = $order->status;
+
         $order->update(['status' => $validated['status']]);
+
+        // Transição manual para "paid" → marca o pedido Shopify como pago.
+        if ($order->fresh()->isPaid() && $previousStatus !== Order::STATUS_PAID) {
+            try {
+                if ($store->isShopifyConnected()) {
+                    app(ShopifyOrderSync::class)->markAsPaid($store, $order->fresh());
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Shopify order markAsPaid (manual) falhou', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return response()->json($order);
     }
