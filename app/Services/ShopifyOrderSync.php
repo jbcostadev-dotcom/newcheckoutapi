@@ -124,14 +124,17 @@ class ShopifyOrderSync
      */
     protected function buildOrderPayload(Store $store, Order $order): array
     {
+        [$firstName, $lastName] = $this->splitName($order->customer_name);
+
         $payload = [
             // pending = aguardando pagamento (unpaid no painel Shopify).
             'financial_status' => 'pending',
-            'inventory_behaviour' => 'decrement_ignoring',
+            'inventory_behaviour' => 'decrement_obeying_policy',
             // Não enviar notificações automáticas — o customer pode ainda não ter pago.
             'send_receipt' => false,
             'send_fulfillment_receipt' => false,
             'currency' => 'BRL',
+            'email' => $order->customer_email,
             'note' => 'Pedido criado pelo checkout (pedido interno #'.$order->id.').',
             'note_attributes' => [
                 ['name' => 'internal_order_id', 'value' => (string) $order->id],
@@ -161,17 +164,22 @@ class ShopifyOrderSync
             $payload['customer'] = ['id' => (int) $customer->shopify_customer_id];
         }
 
-        // Endereço de entrega (shipping).
-        if ($order->shipping_logradouro) {
-            $payload['shipping_address'] = [
-                'first_name' => $order->customer_name,
-                'address1' => $order->shipping_logradouro,
-                'address2' => trim(($order->shipping_numero ?? '').' '.($order->shipping_complemento ?? '')),
+        // Endereço de entrega e faturamento (shipping/billing).
+        if ($order->shipping_logradouro && $order->shipping_cidade && $order->shipping_uf) {
+            $address = [
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'address1' => trim($order->shipping_logradouro.' '.($order->shipping_numero ?? '')),
+                'address2' => $order->shipping_complemento,
                 'city' => $order->shipping_cidade,
                 'province' => $order->shipping_uf,
                 'zip' => $order->shipping_cep,
                 'country' => 'BR',
+                'phone' => $order->customer_phone,
             ];
+
+            $payload['shipping_address'] = $address;
+            $payload['billing_address'] = $address;
         }
 
         // Frete como shipping line quando presente.
@@ -188,6 +196,26 @@ class ShopifyOrderSync
         }
 
         return $payload;
+    }
+
+    /**
+     * Separa o nome completo em primeiro e último nome.
+     * Se houver apenas uma palavra, ela vai em first_name e last_name fica vazio.
+     *
+     * @return array{string,string}
+     */
+    protected function splitName(?string $fullName): array
+    {
+        $name = trim((string) $fullName);
+        if ($name === '') {
+            return ['', ''];
+        }
+
+        $parts = preg_split('/\s+/', $name);
+        $first = array_shift($parts);
+        $last = implode(' ', $parts);
+
+        return [$first, $last];
     }
 
     /**
