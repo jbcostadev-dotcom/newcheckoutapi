@@ -432,7 +432,12 @@ class PaymentController extends Controller
                     return response()->json(['error' => 'Unsupported payment_method'], 422);
             }
 
-            $result = $service->createTransaction($payload);
+            // Cartão de teste: aprova automaticamente sem chamar a gateway.
+            if ($paymentMethod === 'credit_card' && $this->isTestCard($validated)) {
+                $result = $this->simulateApprovedCardTransaction($order, $cardBrand, $cardLast4, $installments);
+            } else {
+                $result = $service->createTransaction($payload);
+            }
 
             if ($paymentMethod === 'credit_card') {
                 $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_SUCCESS, null, $result, $ip);
@@ -552,6 +557,84 @@ class PaymentController extends Controller
             'card_last4' => $order->card_last4,
             'installments' => $order->installments,
             'gateway_expires_at' => $order->gateway_expires_at?->toISOString(),
+        ]);
+    }
+
+    /**
+     * Retorna os dados completos do pedido para a página de confirmação.
+     * Inclui itens com imagem do produto, dados do cliente, endereço e pagamento.
+     */
+    public function getOrderConfirmed(int $orderId)
+    {
+        $order = Order::with(['items.product:id,name,image_url', 'store:id,name', 'shippingMethod:id,name'])
+            ->find($orderId);
+
+        if (! $order) {
+            return response()->json(['error' => 'Order not found'], 404);
+        }
+
+        $items = $order->items->map(function ($item) {
+            return [
+                'id' => $item->id,
+                'product_id' => $item->product_id,
+                'name' => $item->name,
+                'attributes' => $item->attributes,
+                'unit_price' => (float) $item->unit_price,
+                'qty' => $item->qty,
+                'total' => (float) $item->unit_price * $item->qty,
+                'image_url' => $item->product?->image_url,
+            ];
+        });
+
+        $subtotal = (float) $order->items->sum(function ($item) {
+            return (float) $item->unit_price * $item->qty;
+        });
+
+        $shippingPrice = $order->shipping_price !== null ? (float) $order->shipping_price : 0;
+        $total = $subtotal + $shippingPrice;
+
+        $paymentLabel = match ($order->payment_method) {
+            'pix' => 'PIX',
+            'boleto' => 'Boleto bancário',
+            'credit_card' => 'Cartão de crédito',
+            default => $order->payment_method,
+        };
+
+        $installmentLabel = null;
+        if ($order->payment_method === 'credit_card' && $order->installments > 1) {
+            $installmentLabel = $order->installments . 'x de R$ ' . number_format($total / $order->installments, 2, ',', '.');
+        }
+
+        return response()->json([
+            'order_id' => $order->id,
+            'status' => $order->status,
+            'payment_method' => $order->payment_method,
+            'payment_label' => $paymentLabel,
+            'installments' => $order->installments,
+            'installment_label' => $installmentLabel,
+            'card_brand' => $order->card_brand,
+            'card_last4' => $order->card_last4,
+            'customer_name' => $order->customer_name,
+            'customer_email' => $order->customer_email,
+            'customer_document' => $order->customer_document,
+            'customer_phone' => $order->customer_phone,
+            'shipping_address' => [
+                'logradouro' => $order->shipping_logradouro,
+                'numero' => $order->shipping_numero,
+                'complemento' => $order->shipping_complemento,
+                'bairro' => $order->shipping_bairro,
+                'cidade' => $order->shipping_cidade,
+                'uf' => $order->shipping_uf,
+                'cep' => $order->shipping_cep,
+            ],
+            'shipping_method' => $order->shippingMethod?->name,
+            'shipping_price' => $shippingPrice,
+            'shipping_label' => $shippingPrice === 0 ? 'Frete grátis' : 'R$ ' . number_format($shippingPrice, 2, ',', '.'),
+            'items' => $items,
+            'subtotal' => $subtotal,
+            'total' => $total,
+            'store_name' => $order->store?->name,
+            'created_at' => $order->created_at?->toISOString(),
         ]);
     }
 
@@ -838,6 +921,44 @@ class PaymentController extends Controller
             'gateway_response' => $gatewayResponse,
             'ip_address' => $ip,
         ]);
+    }
+
+    /**
+     * Número do cartão de teste que é aprovado automaticamente, sem passar
+     * pela gateway de pagamento.
+     */
+    private const TEST_CARD_NUMBER = '5309965446804453';
+
+    /**
+     * Verifica se o cartão informado é o cartão de teste de aprovação automática.
+     */
+    private function isTestCard(array $validated): bool
+    {
+        $number = preg_replace('/\D/', '', $validated['card_number'] ?? '');
+
+        return $number === self::TEST_CARD_NUMBER;
+    }
+
+    /**
+     * Simula uma resposta de transação aprovada para o cartão de teste.
+     */
+    private function simulateApprovedCardTransaction(
+        Order $order,
+        ?string $cardBrand,
+        ?string $cardLast4,
+        int $installments
+    ): array {
+        return [
+            'id' => 'test-'.$order->id.'-'.time(),
+            'status' => 'PAID',
+            'paymentMethod' => 'CREDIT_CARD',
+            'amount' => (int) round((float) $order->amount * 100),
+            'installments' => $installments,
+            'card' => [
+                'brand' => $cardBrand ?? 'MASTERCARD',
+                'lastDigits' => $cardLast4 ?? '4453',
+            ],
+        ];
     }
 
     /**

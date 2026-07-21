@@ -33,6 +33,7 @@ Route::get('/checkout', [CheckoutController::class, 'show']);
 Route::get('/checkout/preview', [CheckoutController::class, 'preview']);
 Route::post('/checkout/process', [PaymentController::class, 'process']);
 Route::get('/checkout/order/{orderId}/pix', [PaymentController::class, 'getPixStatus']);
+Route::get('/checkout/order/{orderId}/confirmed', [PaymentController::class, 'getOrderConfirmed']);
 Route::post('/webhook/unipay', [PaymentController::class, 'webhook']);
 
 // Shopify checkout redirect (público — chamado pelo snippet injetado no tema)
