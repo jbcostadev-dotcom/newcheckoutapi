@@ -100,12 +100,19 @@ class ShopifyOrderSync
             $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/orders/{$order->shopify_order_id}/transactions.json";
             $this->request($store, 'POST', $endpoint, [
                 'transaction' => [
-                    'kind' => 'capture',
+                    'kind' => 'sale',
                     'status' => 'success',
                     'amount' => $amount,
                     'currency' => 'BRL',
                     'source_name' => 'external',
                 ],
+            ]);
+
+            Log::info('Shopify order marcado como pago', [
+                'store_id' => $store->id,
+                'order_id' => $order->id,
+                'shopify_order_id' => $order->shopify_order_id,
+                'amount' => $amount,
             ]);
         } catch (\Throwable $e) {
             Log::warning('Shopify order markAsPaid falhou', [
