@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\Gateway;
+use App\Models\OrderBump;
 use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
@@ -112,6 +113,74 @@ class CheckoutController extends Controller
         return $result;
     }
 
+    /**
+     * Constrói a lista de order bumps aplicáveis a um carrinho.
+     * Cada bump traz os dados do produto oferecido, o preço original e o
+     * preço com desconto, além de cores/labels para personalização visual.
+     */
+    private function buildOrderBumps($store, array $productIds)
+    {
+        $bumps = $store->orderBumps()
+            ->with(['product:id,name,parent_title,attributes,price,compare_at_price,image_url'])
+            ->where('is_active', true)
+            ->get();
+
+        $uniqueProductIds = array_values(array_unique($productIds));
+
+        $result = [];
+        foreach ($bumps as $bump) {
+            // Validações básicas de elegibilidade.
+            if (! $bump->product) {
+                continue;
+            }
+
+            // Escopo "specific": só exibe se algum produto do carrinho for o alvo.
+            if ($bump->scope === 'specific') {
+                if (! $bump->target_product_id || ! in_array($bump->target_product_id, $uniqueProductIds, true)) {
+                    continue;
+                }
+            }
+
+            // Não oferece o bump se o próprio produto oferecido já estiver no carrinho.
+            if (in_array($bump->product->id, $uniqueProductIds, true)) {
+                continue;
+            }
+
+            $originalPrice = (float) $bump->product->price;
+            $discountedPrice = $bump->calculateDiscountedPrice();
+
+            $result[] = [
+                'id' => $bump->id,
+                'name' => $bump->name,
+                'product_id' => $bump->product->id,
+                'product' => [
+                    'id' => $bump->product->id,
+                    'name' => $bump->product->name,
+                    'parent_title' => $bump->product->parent_title,
+                    'attributes' => $bump->product->attributes,
+                    'image_url' => $bump->product->image_url,
+                    'original_price' => round($originalPrice, 2),
+                    'bump_price' => $discountedPrice,
+                ],
+                'discount_type' => $bump->discount_type,
+                'discount_value' => (float) $bump->discount_value,
+                'scope' => $bump->scope,
+                'show_credit_card' => (bool) $bump->show_credit_card,
+                'show_pix' => (bool) $bump->show_pix,
+                'show_boleto' => (bool) $bump->show_boleto,
+                'offer_title' => $bump->offer_title,
+                'offer_message' => $bump->offer_message,
+                'bg_color' => $bump->bg_color,
+                'border_color' => $bump->border_color,
+                'button_color' => $bump->button_color,
+                'button_text_color' => $bump->button_text_color,
+                'button_label' => $bump->button_label,
+            ];
+        }
+
+        return $result;
+    }
+
     public function show(Request $request)
     {
         $domain = $request->query('domain');
@@ -200,6 +269,7 @@ class CheckoutController extends Controller
             'products' => $items,
             'total' => round($total, 2),
             'shipping_methods' => $shippingMethods,
+            'order_bumps' => $this->buildOrderBumps($store, $uniqueIds),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
@@ -280,6 +350,7 @@ class CheckoutController extends Controller
             'total' => 99.90,
             'preview' => true,
             'shipping_methods' => $shippingMethods,
+            'order_bumps' => $this->buildOrderBumps($store, [1, 2]),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')

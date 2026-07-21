@@ -6,6 +6,7 @@ use App\Exceptions\UnipayException;
 use App\Http\Controllers\Controller;
 use App\Models\CardPaymentAttempt;
 use App\Models\Order;
+use App\Models\OrderBump;
 use App\Models\Store;
 use App\Services\ShopifyCustomerSync;
 use App\Services\ShopifyOrderSync;
@@ -56,6 +57,7 @@ class PaymentController extends Controller
             'shipping_address.bairro' => 'required|string|min:2|max:120',
             'shipping_address.cidade' => 'nullable|string|max:120',
             'shipping_address.uf' => 'nullable|string|max:2',
+            'order_bump_id' => 'nullable|integer',
         ]);
 
         $store = Store::resolveByDomain($validated['domain']);
@@ -196,6 +198,59 @@ class PaymentController extends Controller
         }
 
         $total = round($total, 2);
+
+        // ── Order Bump aceito pelo cliente ──────────────────────────────
+        // Se enviado, valida elegibilidade, calcula o preço com desconto e
+        // adiciona um OrderItem extra ao pedido. O filtro de escopo/sp é
+        // refeito aqui para evitar manipulação no lado do cliente.
+        $orderBumpId = $validated['order_bump_id'] ?? null;
+        if ($orderBumpId !== null) {
+            $bump = $store->orderBumps()
+                ->with('product')
+                ->where('id', $orderBumpId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($bump && $bump->product && $bump->product->is_active) {
+                $cartProductIds = array_keys($grouped);
+
+                // Escopo específico: só aplica se o alvo estiver no carrinho.
+                if ($bump->scope === 'specific'
+                    && (! $bump->target_product_id || ! in_array($bump->target_product_id, $cartProductIds, true))) {
+                    $bump = null;
+                }
+
+                // Não adiciona se o produto oferecido já está no carrinho.
+                if ($bump && in_array($bump->product->id, $cartProductIds, true)) {
+                    $bump = null;
+                }
+
+                // Valida compatibilidade com a forma de pagamento selecionada.
+                if ($bump) {
+                    $pmKey = $paymentMethod;
+                    $allowedMap = [
+                        'pix' => $bump->show_pix,
+                        'credit_card' => $bump->show_credit_card,
+                        'boleto' => $bump->show_boleto,
+                    ];
+                    if (! ($allowedMap[$pmKey] ?? true)) {
+                        $bump = null;
+                    }
+                }
+
+                if ($bump) {
+                    $bumpPrice = $bump->calculateDiscountedPrice();
+                    $orderItemsData[] = [
+                        'product_id' => $bump->product->id,
+                        'name' => $bump->product->name,
+                        'attributes' => $bump->product->attributes,
+                        'unit_price' => $bumpPrice,
+                        'qty' => 1,
+                    ];
+                    $total = round($total + $bumpPrice, 2);
+                }
+            }
+        }
 
         // Calcula valor do frete.
         $shippingMethodId = $validated['shipping_method_id'] ?? null;

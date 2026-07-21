@@ -87,6 +87,11 @@ class Store extends Model
         return $this->hasMany(Customer::class);
     }
 
+    public function orderBumps()
+    {
+        return $this->hasMany(OrderBump::class);
+    }
+
     /**
      * Indica se a loja possui Shopify conectada.
      */

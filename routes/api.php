@@ -17,6 +17,7 @@ use App\Http\Controllers\API\SslController;
 use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\SocialProofController;
 use App\Http\Controllers\API\CustomerController;
+use App\Http\Controllers\API\OrderBumpController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -111,4 +112,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Customers (Clientes)
     Route::get('stores/{store}/customers', [CustomerController::class, 'index']);
     Route::get('stores/{store}/customers/{customer}', [CustomerController::class, 'show']);
+
+    // Order Bumps
+    Route::get('stores/{store}/order-bumps', [OrderBumpController::class, 'index']);
+    Route::post('stores/{store}/order-bumps', [OrderBumpController::class, 'store']);
+    Route::put('stores/{store}/order-bumps/{orderBump}', [OrderBumpController::class, 'update']);
+    Route::delete('stores/{store}/order-bumps/{orderBump}', [OrderBumpController::class, 'destroy']);
 });
