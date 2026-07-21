@@ -5,8 +5,10 @@ namespace App\Http\Controllers\API;
 use App\Exceptions\UnipayException;
 use App\Http\Controllers\Controller;
 use App\Models\CardPaymentAttempt;
+use App\Models\Customer;
 use App\Models\Store;
 use App\Models\Order;
+use App\Services\ShopifyCustomerSync;
 use App\Services\UnipayService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -226,8 +228,48 @@ class PaymentController extends Controller
         // Cria pedido + itens em transação (atomicidade).
         $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $finalTotal, $shippingMethodId, $shippingPrice, $installments) {
             $ship = $validated['shipping_address'] ?? [];
+
+            // Vincula (ou cria) o cliente pelo email + loja para manter histórico.
+            $customer = $store->customers()->where('email', $validated['customer_email'])->first();
+            if (!$customer) {
+                $customer = $store->customers()->create([
+                    'name' => $validated['customer_name'],
+                    'email' => $validated['customer_email'],
+                    'phone' => $validated['customer_phone'] ?? null,
+                    'document' => $validated['customer_document'] ?? null,
+                    'zip' => $ship['cep'] ?? null,
+                    'street' => $ship['logradouro'] ?? null,
+                    'number' => $ship['numero'] ?? null,
+                    'complement' => $ship['complemento'] ?? null,
+                    'district' => $ship['bairro'] ?? null,
+                    'city' => $ship['cidade'] ?? null,
+                    'uf' => $ship['uf'] ?? null,
+                ]);
+            } else {
+                // Atualiza campos em branco preservando dados já preenchidos.
+                $update = [];
+                foreach (['phone' => 'customer_phone', 'document' => 'customer_document'] as $field => $key) {
+                    if (empty($customer->{$field}) && !empty($validated[$key])) {
+                        $update[$field] = $validated[$key];
+                    }
+                }
+                if (!empty($ship['cep']) && empty($customer->zip)) {
+                    $update['zip'] = $ship['cep'] ?? null;
+                    $update['street'] = $ship['logradouro'] ?? null;
+                    $update['number'] = $ship['numero'] ?? null;
+                    $update['complement'] = $ship['complemento'] ?? null;
+                    $update['district'] = $ship['bairro'] ?? null;
+                    $update['city'] = $ship['cidade'] ?? null;
+                    $update['uf'] = $ship['uf'] ?? null;
+                }
+                if (!empty($update)) {
+                    $customer->update($update);
+                }
+            }
+
             $order = Order::create([
                 'store_id' => $store->id,
+                'customer_id' => $customer->id,
                 'customer_name' => $validated['customer_name'],
                 'customer_email' => $validated['customer_email'],
                 'customer_document' => $validated['customer_document'] ?? null,
@@ -253,6 +295,22 @@ class PaymentController extends Controller
 
             return $order;
         });
+
+        // Sincroniza o cliente (e seu endereço) na Shopify — best effort.
+        try {
+            $customer = $order->customer;
+            if ($customer && $store->isShopifyConnected()) {
+                app(ShopifyCustomerSync::class)->sync($store, $customer);
+                if (!empty($validated['shipping_address']['cep'])) {
+                    app(ShopifyCustomerSync::class)->updateAddress($store, $customer->fresh());
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Shopify customer sync no payment falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         $service = new UnipayService($gateway);
         $postbackUrl = rtrim(config('app.url'), '/') . '/api/webhook/unipay';

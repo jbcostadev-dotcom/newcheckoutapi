@@ -20,7 +20,7 @@ class Order extends Model
     public const STATUS_CHARGEDBACK = 'chargedback';
 
     protected $fillable = [
-        'store_id', 'customer_name', 'customer_email',
+        'store_id', 'customer_id', 'customer_name', 'customer_email',
         'customer_phone', 'customer_document', 'amount', 'payment_method',
         'status', 'gateway_transaction_id', 'pix_qrcode', 'pix_copia_cola',
         'card_brand', 'card_last4', 'card_token', 'installments',
@@ -50,6 +50,11 @@ class Order extends Model
     public function shippingMethod()
     {
         return $this->belongsTo(ShippingMethod::class);
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function isPaid(): bool

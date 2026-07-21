@@ -82,6 +82,11 @@ class Store extends Model
         return $this->hasMany(SocialProof::class);
     }
 
+    public function customers()
+    {
+        return $this->hasMany(Customer::class);
+    }
+
     /**
      * Indica se a loja possui Shopify conectada.
      */

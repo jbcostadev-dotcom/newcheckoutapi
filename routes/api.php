@@ -16,6 +16,7 @@ use App\Http\Controllers\API\GatewayController;
 use App\Http\Controllers\API\SslController;
 use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\SocialProofController;
+use App\Http\Controllers\API\CustomerController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -35,6 +36,10 @@ Route::post('/webhook/unipay', [PaymentController::class, 'webhook']);
 
 // Shopify checkout redirect (público — chamado pelo snippet injetado no tema)
 Route::post('/shopify/checkout-redirect', [ShopifyController::class, 'checkoutRedirect']);
+
+// Customer registration (público — chamado durante o checkout)
+Route::post('/checkout/customer', [CustomerController::class, 'register']);
+Route::post('/checkout/customer/address', [CustomerController::class, 'updateAddress']);
 
 // SSL validation — público (consultado pelo Caddy On-Demand TLS)
 Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
@@ -102,4 +107,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Communications
     Route::post('/orders/{id}/notify', [CommunicationController::class, 'notifyOrder']);
+
+    // Customers (Clientes)
+    Route::get('stores/{store}/customers', [CustomerController::class, 'index']);
+    Route::get('stores/{store}/customers/{customer}', [CustomerController::class, 'show']);
 });

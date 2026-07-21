@@ -40,7 +40,7 @@ return [
     // salvas em stores.shopify_client_id / shopify_client_secret.
     // Aqui fica apenas a config global do redirect_uri e dos escopos.
     'shopify' => [
-        'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders,write_themes'),
+        'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders,write_themes,read_customers,write_customers'),
         'redirect_uri' => rtrim(env('APP_URL', 'https://' . env('API_DOMAIN', 'api.bersenker.shop')), '/') . '/api/shopify/callback',
         // Versão da Admin API REST usada nas chamadas de tema/assets.
         'api_version' => env('SHOPIFY_API_VERSION', '2025-07'),
