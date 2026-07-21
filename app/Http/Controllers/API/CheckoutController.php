@@ -16,7 +16,7 @@ class CheckoutController extends Controller
             'primary_color' => '#6366f1',
             'secondary_color' => '#8b5cf6',
             'dark_mode' => true,
-            'enable_order_bump' => false,
+            'enable_order_bump' => true,
             'button_text' => 'Finalizar Compra',
             'banner_message' => 'Digite aqui a mensagem',
             'header_store_name_visible' => true,
