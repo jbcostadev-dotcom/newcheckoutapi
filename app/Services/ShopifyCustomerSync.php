@@ -153,8 +153,9 @@ class ShopifyCustomerSync
             'email' => $customer->email,
         ];
 
-        if ($customer->phone) {
-            $payload['phone'] = $this->normalizePhone($customer->phone);
+        $normalizedPhone = $customer->phone ? $this->normalizePhone($customer->phone) : null;
+        if ($normalizedPhone) {
+            $payload['phone'] = $normalizedPhone;
         }
 
         if ($customer->document) {
@@ -174,7 +175,7 @@ class ShopifyCustomerSync
      */
     protected function buildAddress(Customer $customer): array
     {
-        return [
+        $address = [
             'address1' => $customer->street,
             'address2' => $customer->complement,
             'number' => $customer->number,
@@ -182,24 +183,47 @@ class ShopifyCustomerSync
             'province' => $customer->uf,
             'zip' => $customer->zip,
             'first_name' => $customer->name,
-            'phone' => $customer->phone ? $this->normalizePhone($customer->phone) : null,
             'country' => 'BR',
         ];
+
+        $normalizedPhone = $customer->phone ? $this->normalizePhone($customer->phone) : null;
+        if ($normalizedPhone) {
+            $address['phone'] = $normalizedPhone;
+        }
+
+        return $address;
     }
 
     /**
-     * Normaliza o telefone para o formato internacional esperado pela Shopify.
+     * Normaliza o telefone para o formato E.164 esperado pela Shopify.
+     *
+     * Regras:
+     *  - remove tudo que não for dígito;
+     *  - remove o 0 inicial (prefixo de longa distância) quando presente;
+     *  - adiciona o código do Brasil (55) quando não houver;
+     *  - retorna null se o resultado não parecer um número válido.
      */
-    protected function normalizePhone(string $phone): string
+    protected function normalizePhone(string $phone): ?string
     {
         $digits = preg_replace('/\D/', '', $phone);
 
-        if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+        if (empty($digits)) {
+            return null;
+        }
+
+        // Remove o 0 de longa distância, se existir.
+        if (str_starts_with($digits, '0')) {
             $digits = substr($digits, 1);
         }
 
+        // Adiciona o código do Brasil caso ainda não esteja presente.
         if (!str_starts_with($digits, '55')) {
             $digits = '55' . $digits;
+        }
+
+        // E.164 válido para Brasil: +55 + 10 ou 11 dígitos.
+        if (!preg_match('/^55\d{10,11}$/', $digits)) {
+            return null;
         }
 
         return '+' . $digits;
