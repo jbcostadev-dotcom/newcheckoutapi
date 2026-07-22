@@ -4,10 +4,12 @@ namespace App\Http\Controllers\API;
 
 use App\Exceptions\UnipayException;
 use App\Http\Controllers\Controller;
+use App\Models\AbandonedCart;
 use App\Models\CardPaymentAttempt;
 use App\Models\Order;
 use App\Models\OrderBump;
 use App\Models\Store;
+use App\Http\Controllers\API\AbandonedCartController;
 use App\Services\ShopifyCustomerSync;
 use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
@@ -352,6 +354,20 @@ class PaymentController extends Controller
             return $order;
         });
 
+        // Associa o pedido a um carrinho abandonado em aberto (best-effort).
+        try {
+            AbandonedCartController::linkOrder($store, $order);
+
+            if ($order->isPaid() || $order->status === Order::STATUS_AUTHORIZED) {
+                AbandonedCartController::markConvertedByOrder($order);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Abandoned cart link falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Sincroniza o cliente (e seu endereço) na Shopify — best effort.
         try {
             $customer = $order->customer;
@@ -454,6 +470,16 @@ class PaymentController extends Controller
 
             if ($paymentMethod === 'credit_card') {
                 $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $e->getMessage(), $e->body, $ip);
+                AbandonedCartController::markPaymentFailed(
+                    $store,
+                    $validated['customer_email'],
+                    AbandonedCart::REASON_CARD_REFUSED,
+                    $order,
+                    [
+                        'brand' => $cardBrand ?? null,
+                        'last4' => $cardLast4 ?? null,
+                    ]
+                );
             }
 
             return response()->json([
@@ -472,6 +498,16 @@ class PaymentController extends Controller
 
             if ($paymentMethod === 'credit_card') {
                 $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $e->getMessage(), null, $ip);
+                AbandonedCartController::markPaymentFailed(
+                    $store,
+                    $validated['customer_email'],
+                    AbandonedCart::REASON_CARD_REFUSED,
+                    $order,
+                    [
+                        'brand' => $cardBrand ?? null,
+                        'last4' => $cardLast4 ?? null,
+                    ]
+                );
             }
 
             return response()->json([
@@ -744,6 +780,21 @@ class PaymentController extends Controller
             $freshOrder = $order->fresh();
             if ($freshOrder->isPaid() && $previousStatus !== Order::STATUS_PAID) {
                 $this->syncShopifyPaidIfPaid($freshOrder->store, $freshOrder);
+                AbandonedCartController::markConvertedByOrder($freshOrder);
+            }
+
+            // Transicionou para recusado → registra abandono por cartão recusado.
+            if ($freshOrder->status === Order::STATUS_REFUSED && $previousStatus !== Order::STATUS_REFUSED) {
+                AbandonedCartController::markPaymentFailed(
+                    $freshOrder->store,
+                    $freshOrder->customer_email,
+                    AbandonedCart::REASON_CARD_REFUSED,
+                    $freshOrder,
+                    [
+                        'brand' => $freshOrder->card_brand,
+                        'last4' => $freshOrder->card_last4,
+                    ]
+                );
             }
         }
 

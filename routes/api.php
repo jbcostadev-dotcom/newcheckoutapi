@@ -19,6 +19,7 @@ use App\Http\Controllers\API\SocialProofController;
 use App\Http\Controllers\API\CustomerController;
 use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\CouponController;
+use App\Http\Controllers\API\AbandonedCartController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -44,6 +45,9 @@ Route::post('/shopify/checkout-redirect', [ShopifyController::class, 'checkoutRe
 // Customer registration (público — chamado durante o checkout)
 Route::post('/checkout/customer', [CustomerController::class, 'register']);
 Route::post('/checkout/customer/address', [CustomerController::class, 'updateAddress']);
+
+// Abandoned cart tracking (público — chamado durante o checkout)
+Route::post('/checkout/abandoned-cart', [AbandonedCartController::class, 'track']);
 
 // SSL validation — público (consultado pelo Caddy On-Demand TLS)
 Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
@@ -127,4 +131,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{store}/coupons', [CouponController::class, 'store']);
     Route::put('stores/{store}/coupons/{coupon}', [CouponController::class, 'update']);
     Route::delete('stores/{store}/coupons/{coupon}', [CouponController::class, 'destroy']);
+
+    // Abandoned Carts (Carrinhos Abandonados)
+    Route::get('stores/{store}/abandoned-carts', [AbandonedCartController::class, 'index']);
+    Route::get('stores/{store}/abandoned-carts/{cart}', [AbandonedCartController::class, 'show']);
+    Route::patch('stores/{store}/abandoned-carts/{cart}/status', [AbandonedCartController::class, 'updateStatus']);
 });
