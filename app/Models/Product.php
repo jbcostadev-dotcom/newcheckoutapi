@@ -16,6 +16,7 @@ class Product extends Model
         'description',
         'price',
         'compare_at_price',
+        'stock_quantity',
         'image_url',
         'checkout_url',
         'is_active',
@@ -24,6 +25,7 @@ class Product extends Model
     protected $casts = [
         'price' => 'decimal:2',
         'compare_at_price' => 'decimal:2',
+        'stock_quantity' => 'integer',
         'is_active' => 'boolean',
         'attributes' => 'array',
     ];
