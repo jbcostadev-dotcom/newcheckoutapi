@@ -18,6 +18,7 @@ use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\SocialProofController;
 use App\Http\Controllers\API\CustomerController;
 use App\Http\Controllers\API\OrderBumpController;
+use App\Http\Controllers\API\CouponController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -119,4 +120,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{store}/order-bumps', [OrderBumpController::class, 'store']);
     Route::put('stores/{store}/order-bumps/{orderBump}', [OrderBumpController::class, 'update']);
     Route::delete('stores/{store}/order-bumps/{orderBump}', [OrderBumpController::class, 'destroy']);
+
+    // Coupons (Cupons)
+    Route::get('stores/{store}/coupons', [CouponController::class, 'index']);
+    Route::post('stores/{store}/coupons', [CouponController::class, 'store']);
+    Route::put('stores/{store}/coupons/{coupon}', [CouponController::class, 'update']);
+    Route::delete('stores/{store}/coupons/{coupon}', [CouponController::class, 'destroy']);
 });
