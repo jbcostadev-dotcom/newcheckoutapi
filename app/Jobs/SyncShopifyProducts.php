@@ -101,7 +101,9 @@ class SyncShopifyProducts implements ShouldQueue
                             'description' => $this->truncateDescription($shopifyProduct['body_html'] ?? null),
                             'price' => $variant['price'] ?? 0,
                             'compare_at_price' => $variant['compare_at_price'] ?? null,
-                            'stock_quantity' => $variant['inventory_quantity'] ?? null,
+                            'stock_quantity' => ($variant['inventory_management'] ?? null) === 'shopify'
+                                ? ($variant['inventory_quantity'] ?? 0)
+                                : null,
                             'image_url' => $imageSrc,
                             'is_active' => ($shopifyProduct['status'] ?? '') === 'active',
                         ]
