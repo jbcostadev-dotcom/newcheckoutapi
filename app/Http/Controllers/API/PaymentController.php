@@ -609,6 +609,8 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
+        AbandonedCartController::markExpiredPaymentForOrder($order);
+
         $items = $order->items->map(function ($item) {
             return [
                 'id' => $item->id,
@@ -684,6 +686,8 @@ class PaymentController extends Controller
         if (! $order) {
             return response()->json(['error' => 'Order not found'], 404);
         }
+
+        AbandonedCartController::markExpiredPaymentForOrder($order);
 
         return response()->json([
             'order_id' => $order->id,

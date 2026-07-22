@@ -383,7 +383,61 @@ class AbandonedCartController extends Controller
     }
 
     /**
+     * Marca o carrinho de um pedido específico como expirado caso o prazo tenha vencido.
+     * Usado nos endpoints de consulta de status para funcionar sem cron.
+     */
+    public static function markExpiredPaymentForOrder(Order $order): bool
+    {
+        if (! in_array($order->payment_method, ['pix', 'boleto'], true)) {
+            return false;
+        }
+
+        if (! in_array($order->status, [Order::STATUS_PENDING, Order::STATUS_WAITING_PAYMENT], true)) {
+            return false;
+        }
+
+        $cutoff = Carbon::now()->subMinutes(30);
+        if ($order->created_at->greaterThan($cutoff)) {
+            return false;
+        }
+
+        $cart = AbandonedCart::forStore($order->store_id)
+            ->where('order_id', $order->id)
+            ->where('status', '!=', AbandonedCart::STATUS_CONVERTED)
+            ->first();
+
+        if (! $cart) {
+            $cart = AbandonedCart::forStore($order->store_id)
+                ->byEmail($order->customer_email)
+                ->whereIn('status', [AbandonedCart::STATUS_OPEN, AbandonedCart::STATUS_EXPIRED])
+                ->whereNull('order_id')
+                ->latest()
+                ->first();
+        }
+
+        if (! $cart) {
+            return false;
+        }
+
+        $reason = $order->payment_method === 'pix'
+            ? AbandonedCart::REASON_PIX_EXPIRED
+            : AbandonedCart::REASON_BOLETO_EXPIRED;
+
+        $cart->update([
+            'order_id' => $order->id,
+            'payment_method' => $order->payment_method,
+            'status' => AbandonedCart::STATUS_EXPIRED,
+            'abandoned_reason' => $reason,
+            'expired_at' => now(),
+            'last_activity_at' => now(),
+        ]);
+
+        return true;
+    }
+
+    /**
      * Marca carrinhos PIX/Boleto como expirados quando o prazo de pagamento vence.
+     * Pode ser usado via cron/schedule para manter os dados atualizados mesmo sem consultas.
      */
     public static function markExpiredPayments(): int
     {
@@ -396,40 +450,9 @@ class AbandonedCartController extends Controller
 
         $count = 0;
         foreach ($orders as $order) {
-            $cart = AbandonedCart::forStore($order->store_id)
-                ->where('order_id', $order->id)
-                ->where('status', '!=', AbandonedCart::STATUS_CONVERTED)
-                ->first();
-
-            if (! $cart) {
-                // Tenta encontrar pelo e-mail, caso o carrinho tenha sido criado
-                // antes do pedido e depois associado via e-mail.
-                $cart = AbandonedCart::forStore($order->store_id)
-                    ->byEmail($order->customer_email)
-                    ->whereIn('status', [AbandonedCart::STATUS_OPEN, AbandonedCart::STATUS_EXPIRED])
-                    ->whereNull('order_id')
-                    ->latest()
-                    ->first();
+            if (self::markExpiredPaymentForOrder($order)) {
+                $count++;
             }
-
-            if (! $cart) {
-                continue;
-            }
-
-            $reason = $order->payment_method === 'pix'
-                ? AbandonedCart::REASON_PIX_EXPIRED
-                : AbandonedCart::REASON_BOLETO_EXPIRED;
-
-            $cart->update([
-                'order_id' => $order->id,
-                'payment_method' => $order->payment_method,
-                'status' => AbandonedCart::STATUS_EXPIRED,
-                'abandoned_reason' => $reason,
-                'expired_at' => now(),
-                'last_activity_at' => now(),
-            ]);
-
-            $count++;
         }
 
         return $count;
