@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\Gateway;
 use App\Models\OrderBump;
+use App\Models\Coupon;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
@@ -361,6 +363,84 @@ class CheckoutController extends Controller
                     'photo_url' => $p->photo_url,
                     'stars' => $p->stars,
                 ]),
+        ]);
+    }
+
+    /**
+     * Valida um cupom de desconto para o carrinho atual.
+     */
+    public function validateCoupon(Request $request)
+    {
+        $domain = $request->query('domain');
+        $productIdsParam = $request->query('product_ids');
+        $code = $request->query('code');
+
+        if (!$domain || !$code) {
+            return response()->json(['error' => 'Missing domain or code parameters'], 400);
+        }
+
+        $store = Store::resolveByDomain($domain);
+        if (!$store) {
+            return response()->json(['error' => 'Store not found or inactive'], 404);
+        }
+
+        $coupon = $store->coupons()
+            ->where('code', $code)
+            ->where('status', 'active')
+            ->first();
+
+        if (!$coupon) {
+            return response()->json(['error' => 'Cupom inválido ou inativo'], 422);
+        }
+
+        $now = Carbon::now();
+        if ($now->lt(Carbon::parse($coupon->starts_at))) {
+            return response()->json(['error' => 'Este cupom ainda não está ativo'], 422);
+        }
+        if ($now->gt(Carbon::parse($coupon->expires_at))) {
+            return response()->json(['error' => 'Este cupom expirou'], 422);
+        }
+        if ($coupon->max_uses > 0 && $coupon->used_count >= $coupon->max_uses) {
+            return response()->json(['error' => 'Este cupom atingiu o limite de usos'], 422);
+        }
+
+        $productIds = collect(explode(',', $productIdsParam ?? ''))
+            ->map(fn ($v) => (int) trim($v))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!$coupon->applies_to_all_products) {
+            $allowedIds = $coupon->products()->pluck('products.id')->toArray();
+            $hasAllowed = false;
+            foreach ($productIds as $id) {
+                if (in_array($id, $allowedIds, true)) {
+                    $hasAllowed = true;
+                    break;
+                }
+            }
+            if (!$hasAllowed) {
+                return response()->json(['error' => 'Este cupom não é válido para os produtos do carrinho'], 422);
+            }
+        }
+
+        return response()->json([
+            'valid' => true,
+            'coupon' => [
+                'id' => $coupon->id,
+                'code' => $coupon->code,
+                'name' => $coupon->name,
+                'discount_type' => $coupon->discount_type,
+                'discount_value' => (float) $coupon->discount_value,
+                'free_shipping' => (bool) $coupon->free_shipping,
+                'shipping_method_id' => $coupon->shipping_method_id,
+                'first_purchase_only' => (bool) $coupon->first_purchase_only,
+                'accumulate_with_promos' => (bool) $coupon->accumulate_with_promos,
+                'min_purchase_value' => $coupon->min_purchase_value ? (float) $coupon->min_purchase_value : null,
+                'min_items_required' => (bool) $coupon->min_items_required,
+                'min_items_quantity' => $coupon->min_items_quantity ? (int) $coupon->min_items_quantity : null,
+            ],
         ]);
     }
 }

@@ -32,6 +32,7 @@ class CouponController extends Controller
         $store = $request->user()->stores()->findOrFail($storeId);
 
         $validated = $this->validateCoupon($request, $store);
+        $this->validateShippingMethod($store, $validated['shipping_method_id'] ?? null);
 
         if (! empty($validated['auto_apply'])) {
             $conflict = $store->coupons()
@@ -52,7 +53,7 @@ class CouponController extends Controller
             $this->attachProducts($store, $coupon, $validated['product_ids']);
         }
 
-        $coupon->load(['products:id,name,price,image_url']);
+        $coupon->load(['products:id,name,price,image_url', 'shippingMethod:id,name']);
 
         return response()->json($coupon, 201);
     }
@@ -66,6 +67,7 @@ class CouponController extends Controller
         $coupon = $store->coupons()->findOrFail($couponId);
 
         $validated = $this->validateCoupon($request, $store, $coupon->id);
+        $this->validateShippingMethod($store, $validated['shipping_method_id'] ?? null);
 
         if (! empty($validated['auto_apply']) && $coupon->status !== 'active') {
             $validated['status'] = 'active';
@@ -95,7 +97,7 @@ class CouponController extends Controller
             }
         }
 
-        $coupon->load(['products:id,name,price,image_url']);
+        $coupon->load(['products:id,name,price,image_url', 'shippingMethod:id,name']);
 
         return response()->json($coupon);
     }
@@ -140,6 +142,7 @@ class CouponController extends Controller
             'first_purchase_only' => 'boolean',
             'accumulate_with_promos' => 'boolean',
             'free_shipping' => 'boolean',
+            'shipping_method_id' => 'nullable|integer|exists:shipping_methods,id',
             'min_purchase_value' => 'nullable|numeric|min:0',
             'min_items_required' => 'boolean',
             'min_items_quantity' => 'nullable|integer|min:1',
@@ -168,6 +171,19 @@ class CouponController extends Controller
         }
 
         return $validated;
+    }
+
+    /**
+     * Valida se o método de frete informado pertence à loja.
+     */
+    private function validateShippingMethod($store, ?int $shippingMethodId): void
+    {
+        if (! $shippingMethodId) return;
+
+        $owns = $store->shippingMethods()->where('id', $shippingMethodId)->exists();
+        if (! $owns) {
+            abort(response()->json(['error' => 'Método de frete não pertence a esta loja'], 422));
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ class Coupon extends Model
         'first_purchase_only',
         'accumulate_with_promos',
         'free_shipping',
+        'shipping_method_id',
         'min_purchase_value',
         'min_items_required',
         'min_items_quantity',
@@ -52,5 +53,10 @@ class Coupon extends Model
     public function products()
     {
         return $this->belongsToMany(Product::class, 'coupon_product');
+    }
+
+    public function shippingMethod()
+    {
+        return $this->belongsTo(ShippingMethod::class);
     }
 }

@@ -32,6 +32,7 @@ Route::get('/shopify/callback', [ShopifyController::class, 'callback']);
 // Checkout público
 Route::get('/checkout', [CheckoutController::class, 'show']);
 Route::get('/checkout/preview', [CheckoutController::class, 'preview']);
+Route::get('/checkout/coupon', [CheckoutController::class, 'validateCoupon']);
 Route::post('/checkout/process', [PaymentController::class, 'process']);
 Route::get('/checkout/order/{orderId}/pix', [PaymentController::class, 'getPixStatus']);
 Route::get('/checkout/order/{orderId}/confirmed', [PaymentController::class, 'getOrderConfirmed']);
