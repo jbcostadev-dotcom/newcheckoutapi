@@ -9,6 +9,17 @@ use Illuminate\Support\Facades\Storage;
 
 class SocialProofController extends Controller
 {
+    private const ALLOWED_IMAGE_MIMES = ['image/webp', 'image/jpeg', 'image/png'];
+    private const ALLOWED_IMAGE_EXTENSIONS = ['webp', 'jpg', 'jpeg', 'png'];
+    private const MAX_IMAGE_SIZE_KB = 8192; // 8 MB
+
+    private function photoRule(): string
+    {
+        $mimes = implode(',', self::ALLOWED_IMAGE_MIMES);
+        $extensions = implode(',', self::ALLOWED_IMAGE_EXTENSIONS);
+        return "nullable|file|mimetypes:{$mimes}|mimes:{$extensions}|max:" . self::MAX_IMAGE_SIZE_KB;
+    }
+
     public function index(string $storeId, Request $request)
     {
         $store = $request->user()->stores()->findOrFail($storeId);
@@ -28,7 +39,7 @@ class SocialProofController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'testimonial' => 'required|string|max:500',
-            'photo' => 'nullable|image|max:2048',
+            'photo' => $this->photoRule(),
             'stars' => 'required|integer|min:1|max:5',
             'is_active' => 'boolean',
             'sort_order' => 'nullable|integer|min:0',
@@ -60,7 +71,7 @@ class SocialProofController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:100',
             'testimonial' => 'sometimes|required|string|max:500',
-            'photo' => 'nullable|image|max:2048',
+            'photo' => $this->photoRule(),
             'stars' => 'sometimes|required|integer|min:1|max:5',
             'is_active' => 'boolean',
             'sort_order' => 'nullable|integer|min:0',

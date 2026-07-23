@@ -5,9 +5,33 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CheckoutSettingController extends Controller
 {
+    private const ALLOWED_IMAGE_MIMES = ['image/webp', 'image/jpeg', 'image/png'];
+    private const ALLOWED_IMAGE_EXTENSIONS = ['webp', 'jpg', 'jpeg', 'png'];
+    private const MAX_IMAGE_SIZE_KB = 8192; // 8 MB
+
+    /**
+     * Validation rule for uploaded checkout images.
+     */
+    private function imageRule(): string
+    {
+        $mimes = implode(',', self::ALLOWED_IMAGE_MIMES);
+        $extensions = implode(',', self::ALLOWED_IMAGE_EXTENSIONS);
+        return "nullable|file|mimetypes:{$mimes}|mimes:{$extensions}|max:" . self::MAX_IMAGE_SIZE_KB;
+    }
+
+    /**
+     * Store an uploaded image and return its public URL.
+     */
+    private function storeUploadedImage($file, string $storeId, string $folder): string
+    {
+        $path = $file->store("checkout-assets/{$storeId}/{$folder}", 'public');
+        return Storage::disk('public')->url($path);
+    }
+
     public function show(string $storeId, Request $request)
     {
         $store = $request->user()->stores()->findOrFail($storeId);
@@ -24,8 +48,10 @@ class CheckoutSettingController extends Controller
         $validated = $request->validate([
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
-            'logo_url' => 'nullable|string|url',
-            'banner_url' => 'nullable|string|url',
+            'logo' => $this->imageRule(),
+            'banner' => $this->imageRule(),
+            'logo_url' => 'nullable|string',
+            'banner_url' => 'nullable|string',
             'banner_height' => 'nullable|string|in:sm,md,lg',
             'enable_order_bump' => 'boolean',
             'dark_mode' => 'boolean',
@@ -49,7 +75,8 @@ class CheckoutSettingController extends Controller
             'scarcity_countdown_minutes' => 'nullable|integer|min:1|max:999',
             'pix_confirmation_title' => 'nullable|string|max:100',
             'pix_confirmation_message' => 'nullable|string|max:500',
-            'pix_confirmation_logo' => 'nullable|string|url',
+            'pix_confirmation_logo_file' => $this->imageRule(),
+            'pix_confirmation_logo' => 'nullable|string',
             'footer_text' => 'nullable|string|max:255',
             'footer_show_cnpj' => 'boolean',
             'footer_cnpj' => 'nullable|string|max:20',
@@ -64,6 +91,34 @@ class CheckoutSettingController extends Controller
             'boleto_gateway_id' => 'nullable|integer|exists:gateways,id',
             'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
         ]);
+
+        // Process image uploads and overwrite the corresponding *_url fields.
+        foreach ([
+            'logo' => 'logo_url',
+            'banner' => 'banner_url',
+            'pix_confirmation_logo_file' => 'pix_confirmation_logo',
+        ] as $fileKey => $urlKey) {
+            if ($request->hasFile($fileKey)) {
+                $validated[$urlKey] = $this->storeUploadedImage(
+                    $request->file($fileKey),
+                    $storeId,
+                    str_replace('_file', '', $fileKey)
+                );
+            }
+            unset($validated[$fileKey]);
+        }
+
+        // Treat empty strings as null for image URL fields so removals are persisted.
+        // The frontend sends "__keep__" when no new file is selected but the existing URL must be preserved.
+        foreach (['logo_url', 'banner_url', 'pix_confirmation_logo'] as $urlKey) {
+            if (array_key_exists($urlKey, $validated)) {
+                if ($validated[$urlKey] === '') {
+                    $validated[$urlKey] = null;
+                } elseif ($validated[$urlKey] === '__keep__') {
+                    unset($validated[$urlKey]);
+                }
+            }
+        }
 
         $settings->update($validated);
 
