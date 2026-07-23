@@ -15,9 +15,8 @@ class SocialProofController extends Controller
 
     private function photoRule(): string
     {
-        $mimes = implode(',', self::ALLOWED_IMAGE_MIMES);
         $extensions = implode(',', self::ALLOWED_IMAGE_EXTENSIONS);
-        return "nullable|file|mimetypes:{$mimes}|mimes:{$extensions}|max:" . self::MAX_IMAGE_SIZE_KB;
+        return "nullable|file|mimes:{$extensions}|max:" . self::MAX_IMAGE_SIZE_KB;
     }
 
     public function index(string $storeId, Request $request)

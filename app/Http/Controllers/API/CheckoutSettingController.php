@@ -5,7 +5,9 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class CheckoutSettingController extends Controller
 {
@@ -18,9 +20,8 @@ class CheckoutSettingController extends Controller
      */
     private function imageRule(): string
     {
-        $mimes = implode(',', self::ALLOWED_IMAGE_MIMES);
         $extensions = implode(',', self::ALLOWED_IMAGE_EXTENSIONS);
-        return "nullable|file|mimetypes:{$mimes}|mimes:{$extensions}|max:" . self::MAX_IMAGE_SIZE_KB;
+        return "nullable|file|mimes:{$extensions}|max:" . self::MAX_IMAGE_SIZE_KB;
     }
 
     /**
@@ -45,52 +46,71 @@ class CheckoutSettingController extends Controller
         $store = $request->user()->stores()->findOrFail($storeId);
         $settings = $store->checkoutSettings()->firstOrCreate([]);
 
-        $validated = $request->validate([
-            'primary_color' => 'nullable|string|max:7',
-            'secondary_color' => 'nullable|string|max:7',
-            'logo' => $this->imageRule(),
-            'banner' => $this->imageRule(),
-            'logo_url' => 'nullable|string',
-            'banner_url' => 'nullable|string',
-            'banner_height' => 'nullable|string|in:sm,md,lg',
-            'enable_order_bump' => 'boolean',
-            'dark_mode' => 'boolean',
-            'button_text' => 'nullable|string|max:50',
-            'banner_message' => 'nullable|string|max:255',
-            'header_store_name_visible' => 'boolean',
-            'header_secure_badge' => 'boolean',
-            'header_logo_alignment' => 'nullable|string|in:left,center,right',
-            'header_bg_color' => 'nullable|string|max:20',
-            'header_icon_color' => 'nullable|string|max:20',
-            'announcement_bar_enabled' => 'boolean',
-            'announcement_bar_bg' => 'nullable|string|max:7',
-            'announcement_bar_text_color' => 'nullable|string|max:7',
-            'summary_title' => 'nullable|string|max:100',
-            'summary_show_discount' => 'boolean',
-            'summary_coupon_enabled' => 'boolean',
-            'step_title_font_size' => 'nullable|string|max:10',
-            'scarcity_enabled' => 'boolean',
-            'scarcity_type' => 'nullable|string|in:countdown,stock,visitors',
-            'scarcity_text' => 'nullable|string|max:255',
-            'scarcity_countdown_minutes' => 'nullable|integer|min:1|max:999',
-            'pix_confirmation_title' => 'nullable|string|max:100',
-            'pix_confirmation_message' => 'nullable|string|max:500',
-            'pix_confirmation_logo_file' => $this->imageRule(),
-            'pix_confirmation_logo' => 'nullable|string',
-            'footer_text' => 'nullable|string|max:255',
-            'footer_show_cnpj' => 'boolean',
-            'footer_cnpj' => 'nullable|string|max:20',
-            'font_family' => 'nullable|string|max:50',
-            'font_size_base' => 'nullable|string|max:10',
-            'social_proofs_enabled' => 'boolean',
-            'pix_enabled' => 'boolean',
-            'pix_gateway_id' => 'nullable|integer|exists:gateways,id',
-            'card_enabled' => 'boolean',
-            'card_gateway_id' => 'nullable|integer|exists:gateways,id',
-            'boleto_enabled' => 'boolean',
-            'boleto_gateway_id' => 'nullable|integer|exists:gateways,id',
-            'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
+        Log::debug('Checkout settings update', [
+            'store_id' => $storeId,
+            'method' => $request->getMethod(),
+            'has_logo' => $request->hasFile('logo'),
+            'has_banner' => $request->hasFile('banner'),
+            'has_pix_logo' => $request->hasFile('pix_confirmation_logo_file'),
+            'logo_url' => $request->input('logo_url'),
+            'banner_url' => $request->input('banner_url'),
+            'pix_confirmation_logo' => $request->input('pix_confirmation_logo'),
         ]);
+
+        try {
+            $validated = $request->validate([
+                'primary_color' => 'nullable|string|max:7',
+                'secondary_color' => 'nullable|string|max:7',
+                'logo' => $this->imageRule(),
+                'banner' => $this->imageRule(),
+                'logo_url' => 'nullable|string',
+                'banner_url' => 'nullable|string',
+                'banner_height' => 'nullable|string|in:sm,md,lg',
+                'enable_order_bump' => 'boolean',
+                'dark_mode' => 'boolean',
+                'button_text' => 'nullable|string|max:50',
+                'banner_message' => 'nullable|string|max:255',
+                'header_store_name_visible' => 'boolean',
+                'header_secure_badge' => 'boolean',
+                'header_logo_alignment' => 'nullable|string|in:left,center,right',
+                'header_bg_color' => 'nullable|string|max:20',
+                'header_icon_color' => 'nullable|string|max:20',
+                'announcement_bar_enabled' => 'boolean',
+                'announcement_bar_bg' => 'nullable|string|max:7',
+                'announcement_bar_text_color' => 'nullable|string|max:7',
+                'summary_title' => 'nullable|string|max:100',
+                'summary_show_discount' => 'boolean',
+                'summary_coupon_enabled' => 'boolean',
+                'step_title_font_size' => 'nullable|string|max:10',
+                'scarcity_enabled' => 'boolean',
+                'scarcity_type' => 'nullable|string|in:countdown,stock,visitors',
+                'scarcity_text' => 'nullable|string|max:255',
+                'scarcity_countdown_minutes' => 'nullable|integer|min:1|max:999',
+                'pix_confirmation_title' => 'nullable|string|max:100',
+                'pix_confirmation_message' => 'nullable|string|max:500',
+                'pix_confirmation_logo_file' => $this->imageRule(),
+                'pix_confirmation_logo' => 'nullable|string',
+                'footer_text' => 'nullable|string|max:255',
+                'footer_show_cnpj' => 'boolean',
+                'footer_cnpj' => 'nullable|string|max:20',
+                'font_family' => 'nullable|string|max:50',
+                'font_size_base' => 'nullable|string|max:10',
+                'social_proofs_enabled' => 'boolean',
+                'pix_enabled' => 'boolean',
+                'pix_gateway_id' => 'nullable|integer|exists:gateways,id',
+                'card_enabled' => 'boolean',
+                'card_gateway_id' => 'nullable|integer|exists:gateways,id',
+                'boleto_enabled' => 'boolean',
+                'boleto_gateway_id' => 'nullable|integer|exists:gateways,id',
+                'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
+            ]);
+        } catch (ValidationException $e) {
+            Log::warning('Checkout settings validation failed', [
+                'store_id' => $storeId,
+                'errors' => $e->errors(),
+            ]);
+            throw $e;
+        }
 
         // Process image uploads and overwrite the corresponding *_url fields.
         foreach ([
@@ -99,11 +119,25 @@ class CheckoutSettingController extends Controller
             'pix_confirmation_logo_file' => 'pix_confirmation_logo',
         ] as $fileKey => $urlKey) {
             if ($request->hasFile($fileKey)) {
-                $validated[$urlKey] = $this->storeUploadedImage(
-                    $request->file($fileKey),
-                    $storeId,
-                    str_replace('_file', '', $fileKey)
-                );
+                try {
+                    $validated[$urlKey] = $this->storeUploadedImage(
+                        $request->file($fileKey),
+                        $storeId,
+                        str_replace('_file', '', $fileKey)
+                    );
+                    Log::debug('Checkout image stored', [
+                        'store_id' => $storeId,
+                        'field' => $urlKey,
+                        'url' => $validated[$urlKey],
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('Failed to store checkout image', [
+                        'store_id' => $storeId,
+                        'field' => $urlKey,
+                        'error' => $e->getMessage(),
+                    ]);
+                    throw $e;
+                }
             }
             unset($validated[$fileKey]);
         }
