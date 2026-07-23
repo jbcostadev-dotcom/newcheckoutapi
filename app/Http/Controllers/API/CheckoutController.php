@@ -63,24 +63,41 @@ class CheckoutController extends Controller
         $methods = [
             'pix' => [
                 'enabled' => (bool) ($settings->pix_enabled ?? true),
-                'gateway_id' => $settings->pix_gateway_id ?? null,
+                'gateway_ids' => $settings->pix_gateway_ids ?? null,
+                'legacy_gateway_id' => $settings->pix_gateway_id ?? null,
             ],
             'card' => [
                 'enabled' => (bool) ($settings->card_enabled ?? true),
-                'gateway_id' => $settings->card_gateway_id ?? null,
+                'gateway_ids' => $settings->card_gateway_ids ?? null,
+                'legacy_gateway_id' => $settings->card_gateway_id ?? null,
             ],
             'boleto' => [
                 'enabled' => (bool) ($settings->boleto_enabled ?? false),
-                'gateway_id' => $settings->boleto_gateway_id ?? null,
+                'gateway_ids' => $settings->boleto_gateway_ids ?? null,
+                'legacy_gateway_id' => $settings->boleto_gateway_id ?? null,
             ],
         ];
 
         $result = [];
         foreach ($methods as $key => $meta) {
             $gateway = null;
-            if ($meta['gateway_id']) {
-                $gateway = $store->gateways()->where('id', $meta['gateway_id'])->where('is_active', true)->first();
+
+            // Try ordered list of gateway IDs first.
+            $gwIds = is_array($meta['gateway_ids']) ? $meta['gateway_ids'] : [];
+            foreach ($gwIds as $gwId) {
+                $candidate = $store->gateways()->where('id', $gwId)->where('is_active', true)->first();
+                if ($candidate) {
+                    $gateway = $candidate;
+                    break;
+                }
             }
+
+            // Backward compat: try legacy single gateway_id.
+            if (!$gateway && $meta['legacy_gateway_id']) {
+                $gateway = $store->gateways()->where('id', $meta['legacy_gateway_id'])->where('is_active', true)->first();
+            }
+
+            // Last resort: first active gateway.
             if (!$gateway && $meta['enabled']) {
                 $gateway = $store->gateways()->where('is_active', true)->first();
             }

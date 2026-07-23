@@ -98,10 +98,16 @@ class CheckoutSettingController extends Controller
                 'social_proofs_enabled' => 'boolean',
                 'pix_enabled' => 'boolean',
                 'pix_gateway_id' => 'nullable|integer|exists:gateways,id',
+                'pix_gateway_ids' => 'nullable|array',
+                'pix_gateway_ids.*' => 'integer|exists:gateways,id',
                 'card_enabled' => 'boolean',
                 'card_gateway_id' => 'nullable|integer|exists:gateways,id',
+                'card_gateway_ids' => 'nullable|array',
+                'card_gateway_ids.*' => 'integer|exists:gateways,id',
                 'boleto_enabled' => 'boolean',
                 'boleto_gateway_id' => 'nullable|integer|exists:gateways,id',
+                'boleto_gateway_ids' => 'nullable|array',
+                'boleto_gateway_ids.*' => 'integer|exists:gateways,id',
                 'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
             ]);
         } catch (ValidationException $e) {

@@ -44,10 +44,13 @@ class CheckoutSetting extends Model
         'social_proofs_enabled',
         'pix_enabled',
         'pix_gateway_id',
+        'pix_gateway_ids',
         'card_enabled',
         'card_gateway_id',
+        'card_gateway_ids',
         'boleto_enabled',
         'boleto_gateway_id',
+        'boleto_gateway_ids',
         'default_payment_method',
     ];
 
@@ -67,8 +70,11 @@ class CheckoutSetting extends Model
         'card_enabled' => 'boolean',
         'boleto_enabled' => 'boolean',
         'pix_gateway_id' => 'integer',
+        'pix_gateway_ids' => 'array',
         'card_gateway_id' => 'integer',
+        'card_gateway_ids' => 'array',
         'boleto_gateway_id' => 'integer',
+        'boleto_gateway_ids' => 'array',
         'default_payment_method' => 'string',
     ];
 

@@ -110,28 +110,49 @@ class PaymentController extends Controller
             }
         }
 
-        // Resolve gateway for this payment method.
-        $gatewayIdMap = [
+        // Resolve gateway for this payment method using ordered fallback list.
+        $gatewayIdsMap = [
+            'pix' => $settings->pix_gateway_ids ?? null,
+            'credit_card' => $settings->card_gateway_ids ?? null,
+            'boleto' => $settings->boleto_gateway_ids ?? null,
+        ];
+
+        // Backward compatibility: if new JSON field is empty, fall back to single gateway_id.
+        $legacyGatewayIdMap = [
             'pix' => $settings->pix_gateway_id ?? null,
             'credit_card' => $settings->card_gateway_id ?? null,
             'boleto' => $settings->boleto_gateway_id ?? null,
         ];
 
-        $gatewayId = $gatewayIdMap[$paymentMethod] ?? null;
-        $gateway = null;
-
-        if ($gatewayId) {
-            $gateway = $store->gateways()->where('id', $gatewayId)->where('is_active', true)->first();
+        $gatewayIds = $gatewayIdsMap[$paymentMethod] ?? [];
+        if (empty($gatewayIds)) {
+            $legacyId = $legacyGatewayIdMap[$paymentMethod] ?? null;
+            $gatewayIds = $legacyId ? [$legacyId] : [];
         }
 
-        // Fallback: first active gateway
-        if (! $gateway) {
-            $gateway = $store->gateways()->where('is_active', true)->first();
+        // Build ordered list of active gateways to try.
+        $gatewaysToTry = [];
+        foreach ($gatewayIds as $gwId) {
+            $gw = $store->gateways()->where('id', $gwId)->where('is_active', true)->first();
+            if ($gw && $gw->secret_key) {
+                $gatewaysToTry[] = $gw;
+            }
         }
 
-        if (! $gateway || ! $gateway->secret_key) {
+        // Last resort fallback: first active gateway.
+        if (empty($gatewaysToTry)) {
+            $fallback = $store->gateways()->where('is_active', true)->first();
+            if ($fallback && $fallback->secret_key) {
+                $gatewaysToTry[] = $fallback;
+            }
+        }
+
+        if (empty($gatewaysToTry)) {
             return response()->json(['error' => 'No active payment gateway configured for this method'], 400);
         }
+
+        // Use the first gateway for installment calculations (primary gateway config).
+        $gateway = $gatewaysToTry[0];
 
         // Resolve installment rate and apply to final total for credit card.
         $installments = (int) ($validated['installments'] ?? 1);
@@ -397,10 +418,11 @@ class PaymentController extends Controller
             ]);
         }
 
-        $service = new UnipayService($gateway);
         $postbackUrl = rtrim(config('app.url'), '/').'/api/webhook/unipay';
         $ip = $request->ip();
 
+        // Build the payment payload once (it's the same for all gateways).
+        $payload = null;
         try {
             switch ($validated['payment_method']) {
                 case 'pix':
@@ -447,73 +469,110 @@ class PaymentController extends Controller
                 default:
                     return response()->json(['error' => 'Unsupported payment_method'], 422);
             }
-
-            // Cartão de teste: aprova automaticamente sem chamar a gateway.
-            if ($paymentMethod === 'credit_card' && $this->isTestCard($validated)) {
-                $result = $this->simulateApprovedCardTransaction($order, $cardBrand, $cardLast4, $installments);
-            } else {
-                $result = $service->createTransaction($payload);
-            }
-
-            if ($paymentMethod === 'credit_card') {
-                $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_SUCCESS, null, $result, $ip);
-            }
-        } catch (UnipayException $e) {
-            Log::error('Unipay createTransaction falhou', [
-                'order_id' => $order->id,
-                'status' => $e->statusCode,
-                'body' => $e->body,
-                'message' => $e->getMessage(),
-            ]);
-
-            $order->update(['status' => Order::STATUS_FAILED]);
-
-            if ($paymentMethod === 'credit_card') {
-                $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $e->getMessage(), $e->body, $ip);
-                AbandonedCartController::markPaymentFailed(
-                    $store,
-                    $validated['customer_email'],
-                    AbandonedCart::REASON_CARD_REFUSED,
-                    $order,
-                    [
-                        'brand' => $cardBrand ?? null,
-                        'last4' => $cardLast4 ?? null,
-                    ]
-                );
-            }
-
-            return response()->json([
-                'error' => 'Falha ao criar transação na Unipay',
-                'message' => $e->getMessage(),
-                'details' => $e->body,
-            ], 422);
         } catch (\Throwable $e) {
-            Log::error('Erro inesperado ao criar transação na Unipay', [
+            Log::error('Erro ao montar payload de pagamento', [
                 'order_id' => $order->id,
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
-
             $order->update(['status' => Order::STATUS_FAILED]);
-
-            if ($paymentMethod === 'credit_card') {
-                $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $e->getMessage(), null, $ip);
-                AbandonedCartController::markPaymentFailed(
-                    $store,
-                    $validated['customer_email'],
-                    AbandonedCart::REASON_CARD_REFUSED,
-                    $order,
-                    [
-                        'brand' => $cardBrand ?? null,
-                        'last4' => $cardLast4 ?? null,
-                    ]
-                );
-            }
-
             return response()->json([
-                'error' => 'Falha ao comunicar com a Unipay',
+                'error' => 'Erro ao preparar pagamento',
                 'message' => $e->getMessage(),
             ], 500);
+        }
+
+        // Cartão de teste: aprova automaticamente sem chamar a gateway.
+        if ($paymentMethod === 'credit_card' && $this->isTestCard($validated)) {
+            $result = $this->simulateApprovedCardTransaction($order, $cardBrand, $cardLast4, $installments);
+        } else {
+            // ── Gateway Fallback Chain ──
+            // Try each gateway in order. If one fails, log and try the next.
+            $result = null;
+            $lastError = null;
+            $usedGateway = null;
+
+            foreach ($gatewaysToTry as $idx => $gwCandidate) {
+                try {
+                    $service = new UnipayService($gwCandidate);
+                    $result = $service->createTransaction($payload);
+                    $usedGateway = $gwCandidate;
+
+                    if ($idx > 0) {
+                        Log::info('Gateway fallback bem-sucedido', [
+                            'order_id' => $order->id,
+                            'gateway_id' => $gwCandidate->id,
+                            'provider' => $gwCandidate->provider,
+                            'attempt' => $idx + 1,
+                        ]);
+                    }
+                    break; // Success — stop trying.
+                } catch (UnipayException $e) {
+                    $lastError = $e;
+                    Log::warning('Gateway falhou, tentando próximo fallback', [
+                        'order_id' => $order->id,
+                        'gateway_id' => $gwCandidate->id,
+                        'provider' => $gwCandidate->provider,
+                        'attempt' => $idx + 1,
+                        'total_gateways' => count($gatewaysToTry),
+                        'status' => $e->statusCode,
+                        'message' => $e->getMessage(),
+                    ]);
+                    continue;
+                } catch (\Throwable $e) {
+                    $lastError = $e;
+                    Log::warning('Gateway falhou (erro inesperado), tentando próximo fallback', [
+                        'order_id' => $order->id,
+                        'gateway_id' => $gwCandidate->id,
+                        'provider' => $gwCandidate->provider,
+                        'attempt' => $idx + 1,
+                        'message' => $e->getMessage(),
+                    ]);
+                    continue;
+                }
+            }
+
+            // All gateways exhausted — mark as failed.
+            if ($result === null) {
+                $order->update(['status' => Order::STATUS_FAILED]);
+
+                if ($paymentMethod === 'credit_card') {
+                    $errorMsg = $lastError ? $lastError->getMessage() : 'Todas as gateways falharam';
+                    $errorBody = ($lastError instanceof UnipayException) ? $lastError->body : null;
+                    $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_FAILED, $errorMsg, $errorBody, $ip);
+                    AbandonedCartController::markPaymentFailed(
+                        $store,
+                        $validated['customer_email'],
+                        AbandonedCart::REASON_CARD_REFUSED,
+                        $order,
+                        [
+                            'brand' => $cardBrand ?? null,
+                            'last4' => $cardLast4 ?? null,
+                        ]
+                    );
+                }
+
+                if ($lastError instanceof UnipayException) {
+                    return response()->json([
+                        'error' => 'Falha ao criar transação (todas as gateways falharam)',
+                        'message' => $lastError->getMessage(),
+                        'details' => $lastError->body,
+                    ], 422);
+                }
+
+                return response()->json([
+                    'error' => 'Falha ao comunicar com as gateways de pagamento',
+                    'message' => $lastError ? $lastError->getMessage() : 'Nenhuma gateway disponível',
+                ], 500);
+            }
+
+            // Update $gateway to the one that actually succeeded (for downstream reference).
+            if ($usedGateway) {
+                $gateway = $usedGateway;
+            }
+        }
+
+        if ($paymentMethod === 'credit_card') {
+            $this->recordCardAttempt($validated, $store, $order, CardPaymentAttempt::STATUS_SUCCESS, null, $result, $ip);
         }
 
         // Persiste dados retornados pela Unipay.
