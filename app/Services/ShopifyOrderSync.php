@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
  * Fluxo:
  *  - create(): cria o pedido na Shopify como `financial_status = pending`
  *    (aguardando pagamento) e persiste `shopify_order_id`.
- *  - markAsPaid(): adiciona transações `authorization` + `capture` ao pedido
+ *  - markAsPaid(): adiciona uma transação `sale` (gateway manual) ao pedido
  *    Shopify, transicionando-o para `paid` (aprovado).
  *
  * Requer os escopos `read_orders` e `write_orders` no app Shopify da loja.
@@ -74,10 +74,12 @@ class ShopifyOrderSync
 
     /**
      * Marca um pedido (previamente criado) como pago na Shopify,
-     * registrando uma transação `authorization` seguida de `capture`.
+     * registrando uma única transação `sale` com gateway `manual`.
      *
-     * A Shopify rejeita `sale` para pedidos criados via API sem Shopify Payments;
-     * a sequência authorization+capture é a forma compatível de marcar como pago.
+     * Pedidos criados via Admin API não possuem gateway de pagamento associado,
+     * então a Shopify rejeita transações (`authorization`, `sale`, ...) sem um
+     * gateway. Usamos o gateway builtin `manual` (manual_payment_gateway=true),
+     * que é justamente o usado pelo painel Shopify no botão "Marcar como pago".
      */
     public function markAsPaid(Store $store, Order $order): void
     {
@@ -117,40 +119,33 @@ class ShopifyOrderSync
             $amount = number_format((float) $order->amount, 2, '.', '');
             $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/orders/{$order->shopify_order_id}/transactions.json";
 
-            // 1) Autoriza o pagamento.
-            $authResponse = $this->request($store, 'POST', $endpoint, [
+            // Um único `sale` (auth+capture em um passo) é a forma suportada pela
+            // Shopify para marcar pedidos criados via API como pagos. O `gateway`
+            // `manual` é obrigatório aqui: sem ele a API rejeita qualquer `kind`
+            // com "X is not a valid transaction", porque o pedido não possui um
+            // gateway de pagamento associado (não foi checkout Shopify).
+            $saleResponse = $this->request($store, 'POST', $endpoint, [
                 'transaction' => [
-                    'kind' => 'authorization',
+                    'kind' => 'sale',
                     'status' => 'success',
                     'amount' => $amount,
                     'currency' => 'BRL',
-                    'source_name' => 'external',
+                    'gateway' => 'manual',
+                    'source' => 'external',
                 ],
             ]);
 
-            $authId = $authResponse['transaction']['id'] ?? null;
-            if (! $authId) {
-                throw new \RuntimeException('Shopify authorization transaction não retornou ID');
+            $saleId = $saleResponse['transaction']['id'] ?? null;
+            if (! $saleId) {
+                throw new \RuntimeException('Shopify sale transaction não retornou ID');
             }
-
-            // 2) Captura o pagamento autorizado.
-            $this->request($store, 'POST', $endpoint, [
-                'transaction' => [
-                    'kind' => 'capture',
-                    'status' => 'success',
-                    'parent_id' => (int) $authId,
-                    'amount' => $amount,
-                    'currency' => 'BRL',
-                    'source_name' => 'external',
-                ],
-            ]);
 
             Log::info('Shopify order marcado como pago', [
                 'store_id' => $store->id,
                 'order_id' => $order->id,
                 'shopify_order_id' => $order->shopify_order_id,
                 'amount' => $amount,
-                'authorization_id' => $authId,
+                'sale_id' => $saleId,
             ]);
         } catch (\Throwable $e) {
             Log::warning('Shopify order markAsPaid falhou', [
