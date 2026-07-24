@@ -76,4 +76,12 @@ return [
         'admin_url' => env('CADDY_ADMIN_URL', 'http://localhost:2019'),
     ],
 
+    // ── WhatsApp HTTP API (WAHA - API nao oficial) ───────────────────
+    // Cada chip WhatsApp e uma sessao na WAHA. URL e chave sao globais;
+    // cada conexao fica registrada na tabela whatsapp_instances.
+    'waha' => [
+        'url' => env('WAHA_API_URL', 'http://localhost:3000'),
+        'key' => env('WAHA_API_KEY'),
+    ],
+
 ];

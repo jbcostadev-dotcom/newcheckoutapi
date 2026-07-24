@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('abandoned-carts:update-expired')->everyFiveMinutes();
+
+Schedule::command('whatsapp:process-recovery')->everyFiveMinutes();

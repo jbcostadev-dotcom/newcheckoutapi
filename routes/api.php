@@ -21,6 +21,9 @@ use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\UpsellController;
 use App\Http\Controllers\API\CouponController;
 use App\Http\Controllers\API\AbandonedCartController;
+use App\Http\Controllers\API\WhatsappChipController;
+use App\Http\Controllers\API\WhatsappTemplateController;
+use App\Http\Controllers\API\WhatsappLogController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -148,4 +151,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('stores/{store}/abandoned-carts', [AbandonedCartController::class, 'index']);
     Route::get('stores/{store}/abandoned-carts/{cart}', [AbandonedCartController::class, 'show']);
     Route::patch('stores/{store}/abandoned-carts/{cart}/status', [AbandonedCartController::class, 'updateStatus']);
+
+    // WhatsApp — Chips (instâncias/conexão)
+    Route::get('stores/{store}/whatsapp/chips', [WhatsappChipController::class, 'index']);
+    Route::post('stores/{store}/whatsapp/chips', [WhatsappChipController::class, 'store']);
+    Route::post('stores/{store}/whatsapp/chips/sync', [WhatsappChipController::class, 'sync']);
+    Route::get('stores/{store}/whatsapp/chips/{chip}/qr', [WhatsappChipController::class, 'qr']);
+    Route::post('stores/{store}/whatsapp/chips/{chip}/logout', [WhatsappChipController::class, 'logout']);
+    Route::delete('stores/{store}/whatsapp/chips/{chip}', [WhatsappChipController::class, 'destroy']);
+
+    // WhatsApp — Templates
+    Route::get('stores/{store}/whatsapp/templates', [WhatsappTemplateController::class, 'index']);
+    Route::post('stores/{store}/whatsapp/templates', [WhatsappTemplateController::class, 'store']);
+    Route::put('stores/{store}/whatsapp/templates/{template}', [WhatsappTemplateController::class, 'update']);
+    Route::delete('stores/{store}/whatsapp/templates/{template}', [WhatsappTemplateController::class, 'destroy']);
+
+    // WhatsApp — Logs (Entregas/Falhas)
+    Route::get('stores/{store}/whatsapp/logs', [WhatsappLogController::class, 'index']);
+    Route::delete('stores/{store}/whatsapp/logs/{log}', [WhatsappLogController::class, 'destroy']);
 });

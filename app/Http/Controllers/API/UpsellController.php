@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Product;
 use App\Models\Store;
 use App\Models\Upsell;
 use App\Services\GatewayResolverService;
@@ -198,6 +199,7 @@ class UpsellController extends Controller
             'domain' => 'required|string|max:255',
             'order_id' => 'required|integer|exists:orders,id',
             'upsell_id' => 'required|integer|exists:upsells,id',
+            'variant_id' => 'nullable|integer|exists:products,id',
             'variant_attributes' => 'nullable|array',
             'installments' => 'nullable|integer|min:1|max:12',
         ]);
@@ -248,13 +250,24 @@ class UpsellController extends Controller
         $finalPrice = $upsell->calculateDiscountedPrice();
         $variantAttributes = $validated['variant_attributes'] ?? null;
 
+        $variantProduct = $upsell->product;
+        if (!empty($validated['variant_id'])) {
+            $selectedVariant = $store->products()
+                ->where('id', $validated['variant_id'])
+                ->where('shopify_product_id', $upsell->product->shopify_product_id)
+                ->first();
+            if ($selectedVariant) {
+                $variantProduct = $selectedVariant;
+            }
+        }
+
         try {
             if ($order->payment_method === 'credit_card') {
-                return $this->chargeCard($order, $upsell, $finalPrice, $variantAttributes, $validated['installments'] ?? 1);
+                return $this->chargeCard($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $validated['installments'] ?? 1);
             }
 
             if ($order->payment_method === 'pix') {
-                return $this->chargePix($order, $upsell, $finalPrice, $variantAttributes);
+                return $this->chargePix($order, $upsell, $variantProduct, $finalPrice, $variantAttributes);
             }
 
             return response()->json(['error' => 'Payment method not supported for upsell'], 400);
@@ -446,6 +459,17 @@ class UpsellController extends Controller
         $product = $upsell->product;
         $finalPrice = $upsell->calculateDiscountedPrice();
 
+        $variants = [];
+        if ($product && $product->shopify_product_id) {
+            $variants = $product->store
+                ->products()
+                ->where('shopify_product_id', $product->shopify_product_id)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'price', 'image_url', 'attributes'])
+                ->toArray();
+        }
+
         return [
             'id' => $upsell->id,
             'name' => $upsell->name,
@@ -459,6 +483,7 @@ class UpsellController extends Controller
                 'original_price' => (float) $product->price,
                 'upsell_price' => $finalPrice,
                 'attributes' => $product->attributes,
+                'variants' => $variants,
             ],
             'offer_title' => $upsell->offer_title,
             'offer_message' => $upsell->offer_message,
@@ -473,7 +498,7 @@ class UpsellController extends Controller
     /**
      * Processa cobrança de upsell no cartão.
      */
-    private function chargeCard(Order $order, Upsell $upsell, float $finalPrice, ?array $variantAttributes, int $installments)
+    private function chargeCard(Order $order, Upsell $upsell, Product $variantProduct, float $finalPrice, ?array $variantAttributes, int $installments)
     {
         if (empty($order->card_token)) {
             return response()->json([
@@ -484,7 +509,7 @@ class UpsellController extends Controller
 
         // Simulação para cartões de teste (gateway_transaction_id iniciado com 'test-')
         if (str_starts_with((string) $order->gateway_transaction_id, 'test-')) {
-            $this->applyUpsellToOrder($order, $upsell, $finalPrice, $variantAttributes, $order->gateway ?? $order->store->gateways()->where('is_active', true)->first());
+            $this->applyUpsellToOrder($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $order->gateway ?? $order->store->gateways()->where('is_active', true)->first());
             return response()->json(['success' => true]);
         }
 
@@ -544,7 +569,7 @@ class UpsellController extends Controller
         }
 
         // Adiciona item ao pedido existente
-        $this->applyUpsellToOrder($order, $upsell, $finalPrice, $variantAttributes, $usedGateway);
+        $this->applyUpsellToOrder($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway);
 
         return response()->json([
             'success' => true,
@@ -555,7 +580,7 @@ class UpsellController extends Controller
     /**
      * Processa geração de PIX para upsell.
      */
-    private function chargePix(Order $order, Upsell $upsell, float $finalPrice, ?array $variantAttributes)
+    private function chargePix(Order $order, Upsell $upsell, Product $variantProduct, float $finalPrice, ?array $variantAttributes)
     {
         $gatewaysToTry = GatewayResolverService::resolve($order->store, 'pix', $order->gateway_id);
 
@@ -607,7 +632,7 @@ class UpsellController extends Controller
             ], 422);
         }
 
-        $this->applyUpsellToOrder($order, $upsell, $finalPrice, $variantAttributes, $usedGateway, $result);
+        $this->applyUpsellToOrder($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway, $result);
 
         return response()->json([
             'success' => true,
@@ -623,6 +648,7 @@ class UpsellController extends Controller
     private function applyUpsellToOrder(
         Order $order,
         Upsell $upsell,
+        Product $variantProduct,
         float $finalPrice,
         ?array $variantAttributes,
         $usedGateway,
@@ -630,11 +656,11 @@ class UpsellController extends Controller
     ): void {
         $item = OrderItem::create([
             'order_id' => $order->id,
-            'product_id' => $upsell->product_id,
-            'name' => $upsell->product->name,
+            'product_id' => $variantProduct->id,
+            'name' => $variantProduct->name,
             'qty' => 1,
             'unit_price' => $finalPrice,
-            'attributes' => $variantAttributes,
+            'attributes' => $variantAttributes ?? $variantProduct->attributes,
         ]);
 
         // Sincroniza o item de upsell no pedido Shopify já existente (best-effort).
@@ -658,7 +684,7 @@ class UpsellController extends Controller
             'upsell_id' => $upsell->id,
             'upsell_amount' => $finalPrice,
             'upsell_status' => 'accepted',
-            'upsell_product_id' => $upsell->product_id,
+            'upsell_product_id' => $variantProduct->id,
             'gateway_id' => $usedGateway->id,
         ];
 

@@ -8,8 +8,11 @@ use App\Models\Customer;
 use App\Models\Order;
 use App\Models\ShippingMethod;
 use App\Models\Store;
+use App\Models\WhatsappTemplate;
+use App\Services\WhatsAppEventService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class AbandonedCartController extends Controller
@@ -423,6 +426,8 @@ class AbandonedCartController extends Controller
             ? AbandonedCart::REASON_PIX_EXPIRED
             : AbandonedCart::REASON_BOLETO_EXPIRED;
 
+        $alreadyExpired = $cart->status === AbandonedCart::STATUS_EXPIRED;
+
         $cart->update([
             'order_id' => $order->id,
             'payment_method' => $order->payment_method,
@@ -431,6 +436,22 @@ class AbandonedCartController extends Controller
             'expired_at' => now(),
             'last_activity_at' => now(),
         ]);
+
+        // Dispara recuperação WhatsApp apenas para PIX expirado e apenas uma vez.
+        if (! $alreadyExpired && $reason === AbandonedCart::REASON_PIX_EXPIRED) {
+            try {
+                app(WhatsAppEventService::class)->dispatchForOrder(
+                    $order->store ?? Store::find($order->store_id),
+                    WhatsappTemplate::EVENT_PIX_EXPIRED,
+                    $order
+                );
+            } catch (\Throwable $e) {
+                Log::warning('WhatsApp pix_expired dispatch falhou', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return true;
     }

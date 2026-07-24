@@ -77,6 +77,16 @@ class Store extends Model
         return $this->hasMany(WhatsappInstance::class);
     }
 
+    public function whatsappTemplates()
+    {
+        return $this->hasMany(WhatsappTemplate::class);
+    }
+
+    public function whatsappLogs()
+    {
+        return $this->hasMany(WhatsappLog::class);
+    }
+
     public function socialProofs()
     {
         return $this->hasMany(SocialProof::class);
