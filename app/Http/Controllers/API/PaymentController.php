@@ -649,6 +649,7 @@ class PaymentController extends Controller
         $this->syncShopifyPaidIfPaid($store, $order->fresh());
 
         // Verifica se existe upsell aplicável para cartão ou PIX (não boleto)
+        // Só exibe o upsell se o pedido principal já foi pago/autorizado.
         $hasUpsell = false;
         if (in_array($order->fresh()->status, [Order::STATUS_PAID, Order::STATUS_AUTHORIZED], true)
             && in_array($order->payment_method, ['credit_card', 'pix'], true)

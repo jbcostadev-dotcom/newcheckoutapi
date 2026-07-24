@@ -182,6 +182,9 @@ class UpsellController extends Controller
                 'card_brand' => $order->card_brand,
                 'card_last4' => $order->card_last4,
             ],
+            'installment_config' => $order->payment_method === 'credit_card'
+                ? $this->buildInstallmentConfig($store, $order->gateway_id)
+                : null,
         ]);
     }
 
@@ -329,6 +332,96 @@ class UpsellController extends Controller
     }
 
     /**
+     * Normaliza o número de parcelamentos dentro do limite configurado na gateway.
+     */
+    private function normalizeInstallments($gateway, int $installments): int
+    {
+        $limit = (int) ($gateway->installment_limit ?? 12);
+        if ($installments > $limit) {
+            $installments = $limit;
+        }
+        if ($installments < 1) {
+            $installments = 1;
+        }
+        return $installments;
+    }
+
+    /**
+     * Aplica juros compostos ao valor conforme configuração de parcelamento da gateway.
+     * Fórmula idêntica ao checkout principal.
+     */
+    private function applyInstallmentInterest($gateway, float $amount, int $installments): float
+    {
+        $rate = 0.0;
+        if ($installments > ($gateway->interest_free_installments ?? 1)) {
+            $type = $gateway->installment_type ?? 'default';
+            if ($type === 'custom' && is_array($gateway->installment_rates)) {
+                $rate = (float) ($gateway->installment_rates[$installments - 1] ?? 0);
+            } else {
+                $rate = (float) ($gateway->default_installment_rate ?? 3.14);
+            }
+        }
+
+        if ($rate <= 0) {
+            return $amount;
+        }
+
+        return round($amount * pow(1 + $rate / 100, $installments), 2);
+    }
+
+    /**
+     * Monta as configurações de parcelamento usando a gateway do pedido ou
+     * a mesma lógica de fallback do checkout.
+     */
+    private function buildInstallmentConfig(Store $store, ?int $orderGatewayId): ?array
+    {
+        $settings = $store->checkoutSettings;
+
+        $gateway = null;
+        if ($orderGatewayId) {
+            $gateway = $store->gateways()->where('id', $orderGatewayId)->where('is_active', true)->first();
+        }
+
+        if (!$gateway && !empty($settings->card_gateway_ids) && is_array($settings->card_gateway_ids)) {
+            foreach ($settings->card_gateway_ids as $gwId) {
+                $candidate = $store->gateways()->where('id', $gwId)->where('is_active', true)->first();
+                if ($candidate) {
+                    $gateway = $candidate;
+                    break;
+                }
+            }
+        }
+
+        if (!$gateway && ($settings->card_gateway_id ?? null)) {
+            $gateway = $store->gateways()->where('id', $settings->card_gateway_id)->where('is_active', true)->first();
+        }
+
+        if (!$gateway) {
+            $gateway = $store->gateways()->where('is_active', true)->first();
+        }
+
+        if (!$gateway) {
+            return null;
+        }
+
+        $installmentType = $gateway->installment_type ?? 'default';
+        $defaultRate = (float) ($gateway->default_installment_rate ?? 3.14);
+        $customRates = $gateway->installment_rates ?? array_fill(0, 12, $defaultRate);
+        $preSelected = (int) ($gateway->pre_selected_installment ?? 1);
+        $limit = (int) ($gateway->installment_limit ?? 12);
+        $interestFree = (int) ($gateway->interest_free_installments ?? 1);
+
+        return [
+            'type' => $installmentType,
+            'default_rate' => $defaultRate,
+            'rates' => array_values($customRates),
+            'pre_selected' => $preSelected,
+            'limit' => $limit,
+            'interest_free' => $interestFree,
+        ];
+    }
+
+    /**
      * Verifica se o upsell é aplicável ao pedido considerando escopo.
      */
     private function isUpsellApplicable(Upsell $upsell, Order $order): bool
@@ -401,6 +494,11 @@ class UpsellController extends Controller
                 'message' => 'Nenhuma gateway de cartão ativa configurada.',
             ], 400);
         }
+
+        // Aplica as mesmas taxas de parcelamento configuradas na gateway (igual ao checkout).
+        $primaryGateway = $gatewaysToTry[0];
+        $installments = $this->normalizeInstallments($primaryGateway, $installments);
+        $finalPrice = $this->applyInstallmentInterest($primaryGateway, $finalPrice, $installments);
 
         $payload = $this->buildUpsellCardPayload($order, $finalPrice, $installments);
         $result = null;
