@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Log;
  * Fluxo:
  *  - create(): cria o pedido na Shopify como `financial_status = pending`
  *    (aguardando pagamento) e persiste `shopify_order_id`.
-     *  - markAsPaid(): adiciona uma transação `sale/success` ao pedido
-     *    Shopify, transicionando-o para `paid` (aprovado).
+ *  - markAsPaid(): adiciona transações `authorization` + `capture` ao pedido
+ *    Shopify, transicionando-o para `paid` (aprovado).
  *
  * Requer os escopos `read_orders` e `write_orders` no app Shopify da loja.
  *
@@ -74,7 +74,10 @@ class ShopifyOrderSync
 
     /**
      * Marca um pedido (previamente criado) como pago na Shopify,
-     * registrando uma transação `sale` com status `success`.
+     * registrando uma transação `authorization` seguida de `capture`.
+     *
+     * A Shopify rejeita `sale` para pedidos criados via API sem Shopify Payments;
+     * a sequência authorization+capture é a forma compatível de marcar como pago.
      */
     public function markAsPaid(Store $store, Order $order): void
     {
@@ -112,12 +115,30 @@ class ShopifyOrderSync
             }
 
             $amount = number_format((float) $order->amount, 2, '.', '');
-
             $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/orders/{$order->shopify_order_id}/transactions.json";
+
+            // 1) Autoriza o pagamento.
+            $authResponse = $this->request($store, 'POST', $endpoint, [
+                'transaction' => [
+                    'kind' => 'authorization',
+                    'status' => 'success',
+                    'amount' => $amount,
+                    'currency' => 'BRL',
+                    'source_name' => 'external',
+                ],
+            ]);
+
+            $authId = $authResponse['transaction']['id'] ?? null;
+            if (! $authId) {
+                throw new \RuntimeException('Shopify authorization transaction não retornou ID');
+            }
+
+            // 2) Captura o pagamento autorizado.
             $this->request($store, 'POST', $endpoint, [
                 'transaction' => [
-                    'kind' => 'sale',
+                    'kind' => 'capture',
                     'status' => 'success',
+                    'parent_id' => (int) $authId,
                     'amount' => $amount,
                     'currency' => 'BRL',
                     'source_name' => 'external',
@@ -129,6 +150,7 @@ class ShopifyOrderSync
                 'order_id' => $order->id,
                 'shopify_order_id' => $order->shopify_order_id,
                 'amount' => $amount,
+                'authorization_id' => $authId,
             ]);
         } catch (\Throwable $e) {
             Log::warning('Shopify order markAsPaid falhou', [
