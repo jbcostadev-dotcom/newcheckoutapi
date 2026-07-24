@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Store;
 use App\Models\Upsell;
 use App\Services\GatewayResolverService;
+use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -626,7 +627,7 @@ class UpsellController extends Controller
         $usedGateway,
         ?array $gatewayResult = null
     ): void {
-        OrderItem::create([
+        $item = OrderItem::create([
             'order_id' => $order->id,
             'product_id' => $upsell->product_id,
             'name' => $upsell->product->name,
@@ -634,6 +635,22 @@ class UpsellController extends Controller
             'unit_price' => $finalPrice,
             'attributes' => $variantAttributes,
         ]);
+
+        // Sincroniza o item de upsell no pedido Shopify já existente (best-effort).
+        // Se o pedido Shopify ainda não existir, o item será incluído quando
+        // markAsPaid/create forem chamados posteriormente.
+        try {
+            $store = $order->store;
+            if ($store && $store->isShopifyConnected()) {
+                app(ShopifyOrderSync::class)->syncExtraItem($store, $order->fresh(), $item);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Shopify sync do upsell falhou', [
+                'order_id' => $order->id,
+                'upsell_id' => $upsell->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         $updateData = [
             'amount' => round((float) $order->amount + $finalPrice, 2),
