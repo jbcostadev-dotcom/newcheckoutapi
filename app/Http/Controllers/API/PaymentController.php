@@ -593,9 +593,10 @@ class PaymentController extends Controller
             $updateData['status'] = Order::STATUS_PROCESSING;
         }
 
-        // Gateway efetivamente utilizada (fallback)
-        if ($usedGateway) {
-            $updateData['gateway_id'] = $usedGateway->id;
+        // Gateway efetivamente utilizada (fallback). Para cartões de teste, usa a gateway primária.
+        $effectiveGateway = $usedGateway ?? $gateway ?? null;
+        if ($effectiveGateway) {
+            $updateData['gateway_id'] = $effectiveGateway->id;
         }
 
         // PIX: qrcode (copia e cola) + expiração.
