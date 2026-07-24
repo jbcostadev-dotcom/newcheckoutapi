@@ -95,12 +95,27 @@ class ShopifyOrderSync
         }
 
         try {
+            // Evita 409 (Conflict) consultando o estado financeiro atual do pedido.
+            $shopifyOrder = $this->getShopifyOrder($store, $order->shopify_order_id);
+            $financialStatus = $shopifyOrder['order']['financial_status'] ?? null;
+
+            if (in_array($financialStatus, ['paid', 'partially_paid', 'authorized', 'partially_refunded', 'refunded'], true)) {
+                Log::info('Shopify order já está pago/finalizado, ignorando markAsPaid', [
+                    'store_id' => $store->id,
+                    'order_id' => $order->id,
+                    'shopify_order_id' => $order->shopify_order_id,
+                    'financial_status' => $financialStatus,
+                ]);
+
+                return;
+            }
+
             $amount = number_format((float) $order->amount, 2, '.', '');
 
             $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/orders/{$order->shopify_order_id}/transactions.json";
             $this->request($store, 'POST', $endpoint, [
                 'transaction' => [
-                    'kind' => 'sale',
+                    'kind' => 'capture',
                     'status' => 'success',
                     'amount' => $amount,
                     'currency' => 'BRL',
@@ -122,6 +137,18 @@ class ShopifyOrderSync
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Busca os dados atuais do pedido na Shopify.
+     *
+     * @return array<mixed>
+     */
+    protected function getShopifyOrder(Store $store, string $shopifyOrderId): array
+    {
+        $endpoint = "https://{$store->shopify_domain}/admin/api/{$this->apiVersion}/orders/{$shopifyOrderId}.json";
+
+        return $this->request($store, 'GET', $endpoint);
     }
 
     /**
