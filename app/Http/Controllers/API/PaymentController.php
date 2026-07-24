@@ -9,6 +9,7 @@ use App\Models\CardPaymentAttempt;
 use App\Models\Order;
 use App\Models\OrderBump;
 use App\Models\Store;
+use App\Models\Upsell;
 use App\Http\Controllers\API\AbandonedCartController;
 use App\Services\ShopifyCustomerSync;
 use App\Services\ShopifyOrderSync;
@@ -592,6 +593,11 @@ class PaymentController extends Controller
             $updateData['status'] = Order::STATUS_PROCESSING;
         }
 
+        // Gateway efetivamente utilizada (fallback)
+        if ($usedGateway) {
+            $updateData['gateway_id'] = $usedGateway->id;
+        }
+
         // PIX: qrcode (copia e cola) + expiração.
         $pixData = $result['pix'] ?? $result['data']['pix'] ?? null;
         if (is_array($pixData)) {
@@ -620,7 +626,7 @@ class PaymentController extends Controller
             }
         }
 
-        // Cartão: brand + last4 se retornados.
+        // Cartão: brand + last4 + token se retornados.
         $cardData = $result['card'] ?? $result['data']['card'] ?? null;
         if (is_array($cardData)) {
             if (! empty($cardData['brand'])) {
@@ -628,6 +634,9 @@ class PaymentController extends Controller
             }
             if (! empty($cardData['lastDigits'])) {
                 $updateData['card_last4'] = $cardData['lastDigits'];
+            }
+            if (! empty($cardData['token']) || ! empty($cardData['hash'])) {
+                $updateData['card_token'] = $cardData['token'] ?? $cardData['hash'];
             }
         }
 
@@ -637,6 +646,14 @@ class PaymentController extends Controller
 
         // Se a Unipay já retornou "paid", marca o pedido Shopify como pago.
         $this->syncShopifyPaidIfPaid($store, $order->fresh());
+
+        // Verifica se existe upsell aplicável para cartão ou PIX (não boleto)
+        $hasUpsell = false;
+        if (in_array($order->fresh()->status, [Order::STATUS_PAID, Order::STATUS_AUTHORIZED], true)
+            && in_array($order->payment_method, ['credit_card', 'pix'], true)
+        ) {
+            $hasUpsell = $this->hasApplicableUpsell($order, $store);
+        }
 
         return response()->json([
             'order_id' => $order->id,
@@ -652,6 +669,7 @@ class PaymentController extends Controller
             'card_last4' => $order->card_last4,
             'installments' => $order->installments,
             'gateway_expires_at' => $order->gateway_expires_at?->toISOString(),
+            'has_upsell' => $hasUpsell,
         ]);
     }
 
@@ -748,6 +766,11 @@ class PaymentController extends Controller
 
         AbandonedCartController::markExpiredPaymentForOrder($order);
 
+        $hasUpsell = false;
+        if (in_array($order->status, [Order::STATUS_PAID, Order::STATUS_AUTHORIZED], true)) {
+            $hasUpsell = $this->hasApplicableUpsell($order, $order->store);
+        }
+
         return response()->json([
             'order_id' => $order->id,
             'status' => $order->status,
@@ -764,6 +787,7 @@ class PaymentController extends Controller
             'gateway_expires_at' => $order->gateway_expires_at?->toISOString(),
             'created_at' => $order->created_at?->toISOString(),
             'store_name' => $order->store?->name,
+            'has_upsell' => $hasUpsell,
         ]);
     }
 
@@ -1111,5 +1135,36 @@ class PaymentController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Verifica se existe um upsell ativo aplicável ao pedido.
+     */
+    private function hasApplicableUpsell(Order $order, Store $store): bool
+    {
+        $paymentMethod = $order->payment_method;
+
+        $query = $store->upsells()
+            ->active()
+            ->where(function ($q) use ($paymentMethod) {
+                if ($paymentMethod === 'credit_card') {
+                    $q->where('show_credit_card', true);
+                } elseif ($paymentMethod === 'pix') {
+                    $q->where('show_pix', true);
+                }
+            });
+
+        foreach ($query->get() as $upsell) {
+            if ($upsell->scope === 'any') {
+                return true;
+            }
+            if ($upsell->scope === 'specific' && $upsell->target_product_id) {
+                if ($order->items->contains('product_id', $upsell->target_product_id)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

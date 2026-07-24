@@ -18,6 +18,7 @@ use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\SocialProofController;
 use App\Http\Controllers\API\CustomerController;
 use App\Http\Controllers\API\OrderBumpController;
+use App\Http\Controllers\API\UpsellController;
 use App\Http\Controllers\API\CouponController;
 use App\Http\Controllers\API\AbandonedCartController;
 
@@ -38,6 +39,11 @@ Route::post('/checkout/process', [PaymentController::class, 'process']);
 Route::get('/checkout/order/{orderId}/pix', [PaymentController::class, 'getPixStatus']);
 Route::get('/checkout/order/{orderId}/confirmed', [PaymentController::class, 'getOrderConfirmed']);
 Route::post('/webhook/unipay', [PaymentController::class, 'webhook']);
+
+// Upsell público
+Route::get('/checkout/upsell', [UpsellController::class, 'getOffer']);
+Route::post('/checkout/upsell/charge', [UpsellController::class, 'charge']);
+Route::post('/checkout/upsell/decline', [UpsellController::class, 'decline']);
 
 // Shopify checkout redirect (público — chamado pelo snippet injetado no tema)
 Route::post('/shopify/checkout-redirect', [ShopifyController::class, 'checkoutRedirect']);
@@ -125,6 +131,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{store}/order-bumps', [OrderBumpController::class, 'store']);
     Route::put('stores/{store}/order-bumps/{orderBump}', [OrderBumpController::class, 'update']);
     Route::delete('stores/{store}/order-bumps/{orderBump}', [OrderBumpController::class, 'destroy']);
+
+    // Upsells
+    Route::get('stores/{store}/upsells', [UpsellController::class, 'index']);
+    Route::post('stores/{store}/upsells', [UpsellController::class, 'store']);
+    Route::put('stores/{store}/upsells/{upsell}', [UpsellController::class, 'update']);
+    Route::delete('stores/{store}/upsells/{upsell}', [UpsellController::class, 'destroy']);
 
     // Coupons (Cupons)
     Route::get('stores/{store}/coupons', [CouponController::class, 'index']);

@@ -31,7 +31,7 @@ class Order extends Model
     public const STATUS_CHARGEDBACK = 'chargedback';
 
     protected $fillable = [
-        'store_id', 'customer_id', 'customer_name', 'customer_email',
+        'store_id', 'gateway_id', 'customer_id', 'customer_name', 'customer_email',
         'customer_phone', 'customer_document', 'amount', 'payment_method',
         'status', 'gateway_transaction_id', 'shopify_order_id', 'pix_qrcode', 'pix_copia_cola',
         'card_brand', 'card_last4', 'card_token', 'installments',
@@ -39,10 +39,12 @@ class Order extends Model
         'shipping_cep', 'shipping_logradouro', 'shipping_numero',
         'shipping_complemento', 'shipping_bairro', 'shipping_cidade', 'shipping_uf',
         'shipping_method_id', 'shipping_price',
+        'upsell_id', 'upsell_amount', 'upsell_status', 'upsell_product_id',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'upsell_amount' => 'decimal:2',
         'shipping_price' => 'decimal:2',
         'installments' => 'integer',
         'gateway_expires_at' => 'datetime',
@@ -51,6 +53,11 @@ class Order extends Model
     public function store()
     {
         return $this->belongsTo(Store::class);
+    }
+
+    public function gateway()
+    {
+        return $this->belongsTo(Gateway::class);
     }
 
     public function items()
@@ -68,6 +75,16 @@ class Order extends Model
         return $this->belongsTo(Customer::class);
     }
 
+    public function upsell()
+    {
+        return $this->belongsTo(Upsell::class);
+    }
+
+    public function upsellProduct()
+    {
+        return $this->belongsTo(Product::class, 'upsell_product_id');
+    }
+
     public function isPaid(): bool
     {
         return $this->status === self::STATUS_PAID;
@@ -76,6 +93,16 @@ class Order extends Model
     public function isRefunded(): bool
     {
         return $this->status === self::STATUS_REFUNDED;
+    }
+
+    public function isApproved(): bool
+    {
+        return in_array($this->status, [self::STATUS_PAID, self::STATUS_AUTHORIZED], true);
+    }
+
+    public function hasUpsellDecided(): bool
+    {
+        return $this->upsell_status !== null;
     }
 
     /**

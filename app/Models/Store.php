@@ -92,6 +92,11 @@ class Store extends Model
         return $this->hasMany(OrderBump::class);
     }
 
+    public function upsells()
+    {
+        return $this->hasMany(Upsell::class);
+    }
+
     public function coupons()
     {
         return $this->hasMany(Coupon::class);
