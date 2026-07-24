@@ -458,6 +458,7 @@ class UpsellController extends Controller
                 'image_url' => $product->image_url,
                 'original_price' => (float) $product->price,
                 'upsell_price' => $finalPrice,
+                'attributes' => $product->attributes,
             ],
             'offer_title' => $upsell->offer_title,
             'offer_message' => $upsell->offer_message,
