@@ -1096,6 +1096,7 @@ class PaymentController extends Controller
             'card' => [
                 'brand' => $cardBrand ?? 'MASTERCARD',
                 'lastDigits' => $cardLast4 ?? '4453',
+                'token' => 'tok_test_'.($cardLast4 ?? '4453'),
             ],
         ];
     }

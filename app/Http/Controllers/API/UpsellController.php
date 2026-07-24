@@ -387,6 +387,12 @@ class UpsellController extends Controller
             ], 422);
         }
 
+        // Simulação para cartões de teste (gateway_transaction_id iniciado com 'test-')
+        if (str_starts_with((string) $order->gateway_transaction_id, 'test-')) {
+            $this->applyUpsellToOrder($order, $upsell, $finalPrice, $variantAttributes, $order->gateway ?? $order->store->gateways()->where('is_active', true)->first());
+            return response()->json(['success' => true]);
+        }
+
         $gatewaysToTry = GatewayResolverService::resolve($order->store, 'credit_card', $order->gateway_id);
 
         if (empty($gatewaysToTry)) {
