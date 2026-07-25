@@ -21,6 +21,7 @@ use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\UpsellController;
 use App\Http\Controllers\API\CouponController;
 use App\Http\Controllers\API\AbandonedCartController;
+use App\Http\Controllers\API\LiveCheckoutController;
 use App\Http\Controllers\API\WhatsappChipController;
 use App\Http\Controllers\API\WhatsappTemplateController;
 use App\Http\Controllers\API\WhatsappLogController;
@@ -60,6 +61,10 @@ Route::post('/checkout/customer/address', [CustomerController::class, 'updateAdd
 
 // Abandoned cart tracking (público — chamado durante o checkout)
 Route::post('/checkout/abandoned-cart', [AbandonedCartController::class, 'track']);
+
+// Live checkout tracking (público — chamado durante o checkout)
+Route::post('/checkout/live/heartbeat', [LiveCheckoutController::class, 'heartbeat']);
+Route::post('/checkout/live/remove', [LiveCheckoutController::class, 'remove']);
 
 // SSL validation — público (consultado pelo Caddy On-Demand TLS)
 Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
@@ -154,6 +159,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('stores/{store}/abandoned-carts', [AbandonedCartController::class, 'index']);
     Route::get('stores/{store}/abandoned-carts/{cart}', [AbandonedCartController::class, 'show']);
     Route::patch('stores/{store}/abandoned-carts/{cart}/status', [AbandonedCartController::class, 'updateStatus']);
+
+    // Live Checkout (Checkout ao vivo)
+    Route::get('stores/{store}/live-checkout', [LiveCheckoutController::class, 'index']);
 
     // WhatsApp — Chips (instâncias/conexão)
     Route::get('stores/{store}/whatsapp/chips', [WhatsappChipController::class, 'index']);
