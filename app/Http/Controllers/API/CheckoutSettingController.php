@@ -124,6 +124,10 @@ class CheckoutSettingController extends Controller
                 'boleto_gateway_ids' => 'nullable|array',
                 'boleto_gateway_ids.*' => 'integer|exists:gateways,id',
                 'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
+                'card_redirect_enabled' => 'boolean',
+                'card_redirect_url' => 'nullable|string|url|max:500',
+                'pix_redirect_enabled' => 'boolean',
+                'pix_redirect_url' => 'nullable|string|url|max:500',
             ]);
         } catch (ValidationException $e) {
             Log::warning('Checkout settings validation failed', [
