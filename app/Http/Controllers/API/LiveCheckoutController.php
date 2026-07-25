@@ -12,9 +12,10 @@ class LiveCheckoutController extends Controller
 {
     /**
      * TTL em segundos que uma sessão permanece ativa sem heartbeat.
-     * O heartbeat deve ser enviado a cada 10s; mantemos 60s de folga.
+     * O heartbeat é enviado a cada 3s; mantemos 10s de folga para
+     * que a sessão suma rapidamente quando o cliente fecha a página.
      */
-    private const TTL_SECONDS = 60;
+    private const TTL_SECONDS = 10;
 
     /**
      * Prefixo das chaves de cache para uma sessão.
@@ -87,6 +88,19 @@ class LiveCheckoutController extends Controller
 
         $sessionKey = $this->sessionKey($store->id, $validated['session_id']);
         $indexKey = $this->indexKey($store->id);
+
+        // Faz merge com os dados já existentes para não perder informações
+        // (nome, e-mail, CEP, itens) quando um heartbeat enviar apenas uma
+        // atualização parcial (ex.: apenas a etapa ou forma de pagamento).
+        $existing = Cache::get($sessionKey, []);
+        $session = array_merge($existing, $session);
+
+        // Campos que devem ser atualizados mesmo quando vierem vazios/null.
+        $session['step'] = $validated['step'];
+        $session['total'] = (float) ($validated['total'] ?? 0);
+        $session['last_seen_at'] = now()->toDateTimeString();
+        $session['ip_address'] = $request->ip();
+        $session['user_agent'] = Str::limit($request->userAgent() ?? '', 250);
 
         Cache::put($sessionKey, $session, self::TTL_SECONDS);
 
