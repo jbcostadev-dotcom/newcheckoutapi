@@ -24,6 +24,9 @@ use App\Http\Controllers\API\AbandonedCartController;
 use App\Http\Controllers\API\WhatsappChipController;
 use App\Http\Controllers\API\WhatsappTemplateController;
 use App\Http\Controllers\API\WhatsappLogController;
+use App\Http\Controllers\API\SmtpSettingController;
+use App\Http\Controllers\API\EmailTemplateController;
+use App\Http\Controllers\API\EmailLogController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
@@ -169,4 +172,20 @@ Route::middleware('auth:sanctum')->group(function () {
     // WhatsApp — Logs (Entregas/Falhas)
     Route::get('stores/{store}/whatsapp/logs', [WhatsappLogController::class, 'index']);
     Route::delete('stores/{store}/whatsapp/logs/{log}', [WhatsappLogController::class, 'destroy']);
+
+    // E-mail — Provedor SMTP (uma configuração por loja)
+    Route::get('stores/{store}/email/smtp', [SmtpSettingController::class, 'show']);
+    Route::put('stores/{store}/email/smtp', [SmtpSettingController::class, 'update']);
+    Route::post('stores/{store}/email/smtp/test', [SmtpSettingController::class, 'test']);
+    Route::delete('stores/{store}/email/smtp', [SmtpSettingController::class, 'destroy']);
+
+    // E-mail — Templates (HTML)
+    Route::get('stores/{store}/email/templates', [EmailTemplateController::class, 'index']);
+    Route::post('stores/{store}/email/templates', [EmailTemplateController::class, 'store']);
+    Route::put('stores/{store}/email/templates/{template}', [EmailTemplateController::class, 'update']);
+    Route::delete('stores/{store}/email/templates/{template}', [EmailTemplateController::class, 'destroy']);
+
+    // E-mail — Logs (Entregas/Falhas)
+    Route::get('stores/{store}/email/logs', [EmailLogController::class, 'index']);
+    Route::delete('stores/{store}/email/logs/{log}', [EmailLogController::class, 'destroy']);
 });

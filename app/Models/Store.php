@@ -72,6 +72,16 @@ class Store extends Model
         return $this->hasOne(SmtpSetting::class);
     }
 
+    public function emailTemplates()
+    {
+        return $this->hasMany(EmailTemplate::class);
+    }
+
+    public function emailLogs()
+    {
+        return $this->hasMany(EmailLog::class);
+    }
+
     public function whatsappInstances()
     {
         return $this->hasMany(WhatsappInstance::class);

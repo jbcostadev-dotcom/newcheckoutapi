@@ -11,3 +11,5 @@ Artisan::command('inspire', function () {
 Schedule::command('abandoned-carts:update-expired')->everyFiveMinutes();
 
 Schedule::command('whatsapp:process-recovery')->everyFiveMinutes();
+
+Schedule::command('email:process-recovery')->everyFiveMinutes();

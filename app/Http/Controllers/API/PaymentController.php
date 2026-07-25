@@ -16,6 +16,8 @@ use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
+use App\Models\EmailTemplate;
+use App\Services\EmailEventService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -554,6 +556,7 @@ class PaymentController extends Controller
                     );
 
                     $this->dispatchWhatsApp(WhatsappTemplate::EVENT_PAYMENT_REFUSED, $store, $order);
+                    $this->dispatchEmail(EmailTemplate::EVENT_PAYMENT_REFUSED, $store, $order);
                 }
 
                 if ($lastError instanceof UnipayException) {
@@ -652,13 +655,15 @@ class PaymentController extends Controller
         // Se a Unipay já retornou "paid", marca o pedido Shopify como pago.
         $this->syncShopifyPaidIfPaid($store, $order->fresh());
 
-        // ── Notificações WhatsApp — eventos do fluxo de pagamento ──
+        // ── Notificações WhatsApp/E-mail — eventos do fluxo de pagamento ──
         $freshOrder = $order->fresh();
         if (in_array($freshOrder->status, [Order::STATUS_PAID, Order::STATUS_AUTHORIZED], true)) {
             $this->dispatchWhatsApp(WhatsappTemplate::EVENT_PAYMENT_APPROVED, $store, $freshOrder);
+            $this->dispatchEmail(EmailTemplate::EVENT_PAYMENT_APPROVED, $store, $freshOrder);
         } elseif (in_array($freshOrder->payment_method, ['pix', 'boleto'], true)
             && in_array($freshOrder->status, [Order::STATUS_PENDING, Order::STATUS_WAITING_PAYMENT], true)) {
             $this->dispatchWhatsApp(WhatsappTemplate::EVENT_PAYMENT_PENDING, $store, $freshOrder);
+            $this->dispatchEmail(EmailTemplate::EVENT_PAYMENT_PENDING, $store, $freshOrder);
         }
 
         // Verifica se existe upsell aplicável para cartão ou PIX (não boleto)
@@ -885,6 +890,7 @@ class PaymentController extends Controller
                 AbandonedCartController::markConvertedByOrder($freshOrder);
 
                 $this->dispatchWhatsApp(WhatsappTemplate::EVENT_PAYMENT_APPROVED, $freshOrder->store, $freshOrder);
+                $this->dispatchEmail(EmailTemplate::EVENT_PAYMENT_APPROVED, $freshOrder->store, $freshOrder);
             }
 
             // Transicionou para recusado → registra abandono por cartão recusado.
@@ -901,6 +907,7 @@ class PaymentController extends Controller
                 );
 
                 $this->dispatchWhatsApp(WhatsappTemplate::EVENT_PAYMENT_REFUSED, $freshOrder->store, $freshOrder);
+                $this->dispatchEmail(EmailTemplate::EVENT_PAYMENT_REFUSED, $freshOrder->store, $freshOrder);
             }
         }
 
@@ -1201,6 +1208,26 @@ class PaymentController extends Controller
             app(WhatsAppEventService::class)->dispatchForOrder($store, $event, $order);
         } catch (\Throwable $e) {
             Log::warning('WhatsApp dispatch falhou', [
+                'event' => $event,
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Dispara notificação por e-mail para um evento do pedido (best-effort).
+     */
+    private function dispatchEmail(string $event, ?Store $store, Order $order): void
+    {
+        if (! $store) {
+            return;
+        }
+
+        try {
+            app(EmailEventService::class)->dispatchForOrder($store, $event, $order);
+        } catch (\Throwable $e) {
+            Log::warning('E-mail dispatch falhou', [
                 'event' => $event,
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),

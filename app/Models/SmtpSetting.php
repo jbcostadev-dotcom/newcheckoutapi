@@ -8,6 +8,7 @@ class SmtpSetting extends Model
 {
     protected $fillable = [
         'store_id',
+        'name',
         'host',
         'port',
         'username',
@@ -20,10 +21,20 @@ class SmtpSetting extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'password' => 'encrypted',
+    ];
+
+    protected $hidden = [
+        'password',
     ];
 
     public function store()
     {
         return $this->belongsTo(Store::class);
+    }
+
+    public function logs()
+    {
+        return $this->hasMany(EmailLog::class);
     }
 }

@@ -10,6 +10,8 @@ use App\Models\ShippingMethod;
 use App\Models\Store;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
+use App\Models\EmailTemplate;
+use App\Services\EmailEventService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -447,6 +449,19 @@ class AbandonedCartController extends Controller
                 );
             } catch (\Throwable $e) {
                 Log::warning('WhatsApp pix_expired dispatch falhou', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                app(EmailEventService::class)->dispatchForOrder(
+                    $order->store ?? Store::find($order->store_id),
+                    EmailTemplate::EVENT_PIX_EXPIRED,
+                    $order
+                );
+            } catch (\Throwable $e) {
+                Log::warning('E-mail pix_expired dispatch falhou', [
                     'order_id' => $order->id,
                     'error' => $e->getMessage(),
                 ]);
