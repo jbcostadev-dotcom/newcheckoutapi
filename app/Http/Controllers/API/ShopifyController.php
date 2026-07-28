@@ -314,11 +314,20 @@ class ShopifyController extends Controller
     public function checkoutRedirect(Request $request, CheckoutUrlGenerator $urlGenerator)
     {
         $validated = $request->validate([
+            'store_id' => 'required|integer|exists:stores,id',
             'shop' => 'required|string',
             'items' => 'required|array|min:1',
             'items.*.variant_id' => 'required',
             'items.*.quantity' => 'nullable|integer|min:1',
         ]);
+
+        $store = Store::where('id', $validated['store_id'])
+            ->where('status', true)
+            ->first();
+
+        if (! $store) {
+            return response()->json(['message' => 'Loja não encontrada.'], 404);
+        }
 
         $shop = $validated['shop'];
 
@@ -328,12 +337,21 @@ class ShopifyController extends Controller
             $shopDomain = $shop . '.myshopify.com';
         }
 
-        $store = Store::where('shopify_domain', $shopDomain)
-            ->where('status', true)
-            ->first();
+        // Valida consistência: o shop informado deve corresponder à loja.
+        // Permite leve diferença entre shopify_domain e shopify_pending_domain
+        // durante o processo de conexão.
+        $normalizedStored = strtolower((string) $store->shopify_domain);
+        $normalizedPending = strtolower((string) $store->shopify_pending_domain);
+        $normalizedIncoming = strtolower($shopDomain);
 
-        if (!$store) {
-            return response()->json(['message' => 'Loja não encontrada para este domínio Shopify.'], 404);
+        if ($normalizedStored !== $normalizedIncoming && $normalizedPending !== $normalizedIncoming) {
+            Log::warning('Shopify checkout-redirect: domínio do shop não corresponde à loja informada.', [
+                'store_id' => $store->id,
+                'shop' => $shopDomain,
+                'stored_domain' => $store->shopify_domain,
+            ]);
+
+            return response()->json(['message' => 'Domínio Shopify não corresponde à loja informada.'], 404);
         }
 
         // Mapeia variant_id → product.id interno (somente ativos).

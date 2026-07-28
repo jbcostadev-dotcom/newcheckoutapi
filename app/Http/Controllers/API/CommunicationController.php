@@ -15,6 +15,12 @@ class CommunicationController extends Controller
     {
         $order = Order::with('store')->findOrFail($orderId);
 
+        // Garante que o pedido pertence a uma loja do usuário autenticado.
+        $userStoreIds = $request->user()->stores()->pluck('stores.id')->toArray();
+        if (! in_array($order->store_id, $userStoreIds, true)) {
+            return response()->json(['error' => 'Pedido não encontrado.'], 404);
+        }
+
         // Mock Email
         $emailSent = true;
         // Mock WhatsApp

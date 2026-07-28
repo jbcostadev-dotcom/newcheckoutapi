@@ -28,7 +28,8 @@ class AbandonedCartController extends Controller
     public function track(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|required_without:store_id',
             'step_reached' => 'required|in:dados,entrega,pagamento,pagamento_tentado',
             'customer_name' => 'required|string|max:150',
             'customer_email' => 'required|email|max:150',
@@ -61,7 +62,8 @@ class AbandonedCartController extends Controller
             'device_type' => 'nullable|string|max:50',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
 
         if (! $store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
@@ -215,7 +217,7 @@ class AbandonedCartController extends Controller
         $carts->getCollection()->transform(function (AbandonedCart $cart) {
             $cart->items_count = collect($cart->items)->sum('qty');
             $cart->recovery_url = $cart->recovery_token
-                ? rtrim(config('app.url'), '/').'/checkout/recover/'.$cart->recovery_token
+                ? $this->buildRecoveryUrl($cart)
                 : null;
             return $cart;
         });
@@ -235,10 +237,53 @@ class AbandonedCartController extends Controller
 
         $cart->items_count = collect($cart->items)->sum('qty');
         $cart->recovery_url = $cart->recovery_token
-            ? rtrim(config('app.url'), '/').'/checkout/recover/'.$cart->recovery_token
+            ? $this->buildRecoveryUrl($cart)
             : null;
 
         return response()->json($cart);
+    }
+
+    /**
+     * Redireciona um link de recuperação para o checkout da loja.
+     * A rota é pública: quem tiver o token pode reabrir o carrinho.
+     */
+    public function recover(string $token)
+    {
+        $cart = AbandonedCart::where('recovery_token', $token)
+            ->with('store')
+            ->first();
+
+        if (! $cart || ! $cart->store) {
+            return response()->json(['error' => 'Link de recuperação inválido ou expirado.'], 404);
+        }
+
+        $urlGenerator = app(\App\Services\CheckoutUrlGenerator::class);
+
+        $productIds = collect($cart->items ?? [])
+            ->map(fn ($item) => array_fill(0, (int) ($item['qty'] ?? 1), (int) ($item['product_id'] ?? 0)))
+            ->flatten()
+            ->filter()
+            ->values()
+            ->all();
+
+        if (empty($productIds)) {
+            return response()->json(['error' => 'Carrinho vazio.'], 404);
+        }
+
+        $checkoutUrl = $urlGenerator->generateForCart($cart->store, $productIds);
+        $checkoutUrl .= (str_contains($checkoutUrl, '?') ? '&' : '?') . 'recovery_token=' . urlencode($token);
+
+        return redirect()->away($checkoutUrl);
+    }
+
+    /**
+     * Monta a URL de recuperação usando o ID imutável da loja.
+     */
+    private function buildRecoveryUrl(AbandonedCart $cart): string
+    {
+        return rtrim(config('app.url'), '/')
+            . '/api/checkout/recover/'
+            . $cart->recovery_token;
     }
 
     /**

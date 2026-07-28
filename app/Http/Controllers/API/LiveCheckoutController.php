@@ -34,7 +34,8 @@ class LiveCheckoutController extends Controller
     public function heartbeat(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string|max:255',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|max:255|required_without:store_id',
             'session_id' => 'required|string|max:64',
             'step' => 'required|in:dados,entrega,pagamento',
             'customer_name' => 'nullable|string|max:150',
@@ -51,7 +52,8 @@ class LiveCheckoutController extends Controller
             'utm_campaign' => 'nullable|string|max:120',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
         if (! $store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
@@ -121,11 +123,13 @@ class LiveCheckoutController extends Controller
     public function remove(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string|max:255',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|max:255|required_without:store_id',
             'session_id' => 'required|string|max:64',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
         if (! $store) {
             return response()->json(['ok' => true]);
         }

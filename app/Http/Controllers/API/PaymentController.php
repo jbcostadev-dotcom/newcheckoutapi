@@ -39,7 +39,8 @@ class PaymentController extends Controller
     public function process(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|required_without:store_id',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer',
             'items.*.qty' => 'nullable|integer|min:1',
@@ -67,7 +68,8 @@ class PaymentController extends Controller
             'order_bump_id' => 'nullable|integer',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
 
         if (! $store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
@@ -98,7 +100,7 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            $duplicate = $this->getDuplicateFailedAttempt($validated);
+            $duplicate = $this->getDuplicateFailedAttempt($validated, $store);
             if ($duplicate) {
                 return response()->json([
                     'error' => $duplicate->error_message ?: 'Este cartão não foi autorizado. Verifique os dados ou tente outro cartão.',
@@ -106,7 +108,7 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            $failedAttempts = $this->countRecentFailedAttempts($validated);
+            $failedAttempts = $this->countRecentFailedAttempts($validated, $store);
             if ($failedAttempts >= self::MAX_FAILED_CARD_ATTEMPTS) {
                 return response()->json([
                     'error' => 'Você atingiu o limite de 3 tentativas de pagamento com cartão. Tente novamente mais tarde.',
@@ -817,10 +819,16 @@ class PaymentController extends Controller
      * Payload esperado (conforme doc):
      *   { type, objectId, data: { id, status, pix, boleto, card, ... } }
      *
-     * Decisão: sem verificação de assinatura/IP (mesmo padrão do mock anterior).
+     * Segurança: valida assinatura HMAC (header X-Webhook-Signature) e/ou
+     * IP de origem da Unipay. Rejeita silenciosamente se a configuração de
+     * webhook estiver presente e a assinatura/IP não baterem.
      */
     public function webhook(Request $request)
     {
+        if (! $this->validateWebhookSource($request)) {
+            return response()->json(['received' => true]);
+        }
+
         $payload = $request->all();
 
         $data = $payload['data'] ?? $payload;
@@ -912,6 +920,59 @@ class PaymentController extends Controller
         }
 
         return response()->json(['received' => true]);
+    }
+
+    /**
+     * Valida a origem do webhook da Unipay.
+     *
+     * Regras:
+     *  - Se houver UNIPAY_WEBHOOK_SECRET, exige assinatura HMAC-SHA256 no
+     *    header X-Webhook-Signature (ou x-webhook-signature) calculada sobre
+     *    o body bruto da requisição.
+     *  - Se houver UNIPAY_WEBHOOK_IPS, exige que o IP remoto esteja na lista.
+     *  - Se nenhuma configuração de segurança estiver presente, permite e
+     *    registra um warning no log (modo legado / desenvolvimento).
+     */
+    private function validateWebhookSource(Request $request): bool
+    {
+        $secret = config('services.unipay.webhook_secret');
+        $allowedIps = config('services.unipay.webhook_ips', []);
+
+        if (! $secret && empty($allowedIps)) {
+            Log::warning('Webhook Unipay recebido sem configuração de assinatura ou IP allowlist.');
+
+            return true;
+        }
+
+        if (! empty($allowedIps)) {
+            $clientIp = $request->ip();
+            if (! in_array($clientIp, $allowedIps, true)) {
+                Log::warning('Webhook Unipay rejeitado por IP não autorizado.', ['ip' => $clientIp]);
+
+                return false;
+            }
+        }
+
+        if ($secret) {
+            $signature = $request->header('X-Webhook-Signature')
+                ?? $request->header('x-webhook-signature');
+
+            if (! $signature) {
+                Log::warning('Webhook Unipay rejeitado: assinatura ausente.');
+
+                return false;
+            }
+
+            $expected = hash_hmac('sha256', $request->getContent(), $secret);
+
+            if (! hash_equals($expected, $signature)) {
+                Log::warning('Webhook Unipay rejeitado: assinatura inválida.');
+
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -1017,13 +1078,16 @@ class PaymentController extends Controller
 
     /**
      * Busca uma tentativa falha com os mesmos dados de cartão, validade e CVV.
-     * A restrição é por CPF do cliente; se o CPF não estiver disponível, usa o e-mail.
+     * A restrição é por CPF do cliente dentro da MESMA LOJA; se o CPF não
+     * estiver disponível, usa o e-mail. Evita que uma loja bloqueie clientes
+     * de outras lojas.
      */
-    private function getDuplicateFailedAttempt(array $validated): ?CardPaymentAttempt
+    private function getDuplicateFailedAttempt(array $validated, Store $store): ?CardPaymentAttempt
     {
         $number = preg_replace('/\D/', '', $validated['card_number'] ?? '');
 
-        $query = CardPaymentAttempt::where('card_fingerprint', $this->cardFingerprint($number))
+        $query = CardPaymentAttempt::where('store_id', $store->id)
+            ->where('card_fingerprint', $this->cardFingerprint($number))
             ->where('card_expiry', $validated['card_expiry'])
             ->where('card_cvv_hash', $this->cvvHash($validated['card_cvv'] ?? ''))
             ->where('status', CardPaymentAttempt::STATUS_FAILED);
@@ -1039,11 +1103,12 @@ class PaymentController extends Controller
 
     /**
      * Conta tentativas falhas do cliente nas últimas N horas.
-     * A restrição é por CPF do cliente; se o CPF não estiver disponível, usa o e-mail.
+     * Escopado por loja para evitar bloqueio cross-store.
      */
-    private function countRecentFailedAttempts(array $validated): int
+    private function countRecentFailedAttempts(array $validated, Store $store): int
     {
-        $query = CardPaymentAttempt::where('status', CardPaymentAttempt::STATUS_FAILED)
+        $query = CardPaymentAttempt::where('store_id', $store->id)
+            ->where('status', CardPaymentAttempt::STATUS_FAILED)
             ->where('created_at', '>=', Carbon::now()->subHours(self::FAILED_ATTEMPTS_WINDOW_HOURS));
 
         if (! empty($validated['customer_document'])) {

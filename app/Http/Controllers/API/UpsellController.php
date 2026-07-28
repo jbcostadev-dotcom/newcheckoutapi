@@ -142,11 +142,13 @@ class UpsellController extends Controller
     public function getOffer(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string|max:255',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|max:255|required_without:store_id',
             'order_id' => 'required|integer|exists:orders,id',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
         if (!$store) {
             return response()->json(['error' => 'Store not found'], 404);
         }
@@ -196,7 +198,8 @@ class UpsellController extends Controller
     public function charge(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string|max:255',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|max:255|required_without:store_id',
             'order_id' => 'required|integer|exists:orders,id',
             'upsell_id' => 'required|integer|exists:upsells,id',
             'variant_id' => 'nullable|integer|exists:products,id',
@@ -204,7 +207,8 @@ class UpsellController extends Controller
             'installments' => 'nullable|integer|min:1|max:12',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
         if (!$store) {
             return response()->json(['error' => 'Store not found'], 404);
         }
@@ -292,11 +296,13 @@ class UpsellController extends Controller
     public function decline(Request $request)
     {
         $validated = $request->validate([
-            'domain' => 'required|string|max:255',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|max:255|required_without:store_id',
             'order_id' => 'required|integer|exists:orders,id',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
         if (!$store) {
             return response()->json(['error' => 'Store not found'], 404);
         }

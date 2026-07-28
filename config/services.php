@@ -57,6 +57,8 @@ return [
     'unipay' => [
         'api_url' => env('UNIPAY_API_URL', 'https://api.fastsoftbrasil.com'),
         'js_url' => env('UNIPAY_JS_URL', 'https://js.fastsoftbrasil.com/security.js'),
+        'webhook_secret' => env('UNIPAY_WEBHOOK_SECRET'),
+        'webhook_ips' => array_filter(array_map('trim', explode(',', env('UNIPAY_WEBHOOK_IPS', '')))),
     ],
 
     // ── Domínios do projeto ───────────────────────────────────────────

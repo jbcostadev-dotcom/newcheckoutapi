@@ -23,7 +23,7 @@ class EmailEventService
 
     public function dispatchForOrder(Store $store, string $event, Order $order): void
     {
-        $vars = $this->orderVars($order);
+        $vars = $this->orderVars($store, $order);
         $this->send($store, $event, 'order:' . $order->id, $vars);
     }
 
@@ -112,7 +112,7 @@ class EmailEventService
         }, $template);
     }
 
-    private function orderVars(Order $order): array
+    private function orderVars(Store $store, Order $order): array
     {
         $firstName = trim(explode(' ', trim($order->customer_name ?? ''))[0] ?? '');
 
@@ -124,7 +124,8 @@ class EmailEventService
 
         $link = '';
         if ($firstItem = $items->first()) {
-            $link = $firstItem->product?->checkout_url ?? '';
+            $link = app(\App\Services\CheckoutUrlGenerator::class)
+                ->generateById($store, (int) $firstItem->product_id);
         }
 
         return [
@@ -153,7 +154,7 @@ class EmailEventService
         })->implode("\n") ?: '';
 
         $link = $cart->recovery_token
-            ? rtrim(config('app.url'), '/') . '/checkout/recover/' . $cart->recovery_token
+            ? rtrim(config('app.url'), '/') . '/api/checkout/recover/' . $cart->recovery_token
             : '';
 
         return [

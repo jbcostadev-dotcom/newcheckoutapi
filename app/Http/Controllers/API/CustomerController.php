@@ -20,7 +20,8 @@ class CustomerController extends Controller
     public function register(Request $request, ShopifyCustomerSync $sync)
     {
         $validated = $request->validate([
-            'domain' => 'required|string',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|required_without:store_id',
             'name' => 'required|string|min:3|max:150',
             'email' => 'required|email|max:150',
             'phone' => 'required|string|min:10|max:20',
@@ -35,7 +36,8 @@ class CustomerController extends Controller
             'address.uf' => 'nullable|string|max:2',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
 
         if (!$store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
@@ -70,7 +72,8 @@ class CustomerController extends Controller
     public function updateAddress(Request $request, ShopifyCustomerSync $sync)
     {
         $validated = $request->validate([
-            'domain' => 'required|string',
+            'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
+            'domain' => 'nullable|string|required_without:store_id',
             'email' => 'required|email|max:150',
             'address' => 'required|array',
             'address.cep' => 'required|string|max:9',
@@ -82,7 +85,8 @@ class CustomerController extends Controller
             'address.uf' => 'nullable|string|max:2',
         ]);
 
-        $store = Store::resolveByDomain($validated['domain']);
+        $identifier = $validated['store_id'] ?? $validated['domain'];
+        $store = Store::resolveByIdentifier((string) $identifier);
 
         if (!$store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);

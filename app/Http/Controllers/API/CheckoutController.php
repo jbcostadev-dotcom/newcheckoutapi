@@ -202,14 +202,14 @@ class CheckoutController extends Controller
 
     public function show(Request $request)
     {
-        $domain = $request->query('domain');
+        $identifier = $request->query('store_id') ?? $request->query('domain');
         $productIdsParam = $request->query('product_ids');
 
-        if (!$domain || !$productIdsParam) {
-            return response()->json(['error' => 'Missing domain or product_ids parameters'], 400);
+        if (!$identifier || !$productIdsParam) {
+            return response()->json(['error' => 'Missing store_id/domain or product_ids parameters'], 400);
         }
 
-        $store = Store::resolveByDomain($domain);
+        $store = Store::resolveByIdentifier($identifier);
 
         if (!$store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
@@ -275,6 +275,7 @@ class CheckoutController extends Controller
 
         return response()->json([
             'store' => [
+                'id' => $store->id,
                 'name' => $store->name,
                 'settings' => $effectiveSettings,
                 'gateways' => $store->gateways->map(function ($gateway) {
@@ -304,13 +305,13 @@ class CheckoutController extends Controller
 
     public function preview(Request $request)
     {
-        $domain = $request->query('domain');
+        $identifier = $request->query('store_id') ?? $request->query('domain');
 
-        if (!$domain) {
-            return response()->json(['error' => 'Missing domain parameter'], 400);
+        if (!$identifier) {
+            return response()->json(['error' => 'Missing store_id or domain parameter'], 400);
         }
 
-        $store = Store::resolveByDomain($domain);
+        $store = Store::resolveByIdentifier($identifier);
 
         if (!$store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
@@ -355,6 +356,7 @@ class CheckoutController extends Controller
 
         return response()->json([
             'store' => [
+                'id' => $store->id,
                 'name' => $store->name,
                 'settings' => $effectiveSettings,
                 'gateways' => $store->gateways->map(function ($gateway) {
@@ -388,15 +390,15 @@ class CheckoutController extends Controller
      */
     public function validateCoupon(Request $request)
     {
-        $domain = $request->query('domain');
+        $identifier = $request->query('store_id') ?? $request->query('domain');
         $productIdsParam = $request->query('product_ids');
         $code = $request->query('code');
 
-        if (!$domain || !$code) {
-            return response()->json(['error' => 'Missing domain or code parameters'], 400);
+        if (!$identifier || !$code) {
+            return response()->json(['error' => 'Missing store_id/domain or code parameters'], 400);
         }
 
-        $store = Store::resolveByDomain($domain);
+        $store = Store::resolveByIdentifier($identifier);
         if (!$store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }

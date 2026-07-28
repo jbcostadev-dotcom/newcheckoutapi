@@ -61,6 +61,7 @@ Route::post('/checkout/customer/address', [CustomerController::class, 'updateAdd
 
 // Abandoned cart tracking (público — chamado durante o checkout)
 Route::post('/checkout/abandoned-cart', [AbandonedCartController::class, 'track']);
+Route::get('/checkout/recover/{token}', [AbandonedCartController::class, 'recover']);
 
 // Live checkout tracking (público — chamado durante o checkout)
 Route::post('/checkout/live/heartbeat', [LiveCheckoutController::class, 'heartbeat']);

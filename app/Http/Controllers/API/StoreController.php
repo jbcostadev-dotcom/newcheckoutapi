@@ -28,14 +28,34 @@ class StoreController extends Controller
             'custom_domain' => 'nullable|string|max:255|unique:stores,custom_domain',
         ]);
 
-        // Auto-gera subdomínio único a partir do nome se não informado
+        // Auto-gera subdomínio único a partir do nome se não informado.
+        // Re-geramos com sufixo crescente em caso de race condition na
+        // verificação de unicidade.
         if (empty($validated['subdomain'])) {
             $validated['subdomain'] = Store::generateUniqueSubdomain($validated['name']);
         }
 
-        $store = $request->user()->stores()->create($validated);
+        $attempts = 0;
+        $maxAttempts = 10;
 
-        return response()->json($store, 201);
+        while ($attempts < $maxAttempts) {
+            try {
+                $store = $request->user()->stores()->create($validated);
+
+                return response()->json($store, 201);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                $attempts++;
+
+                // Só trata colisão de subdomínio; outras UNIQUEs propagam.
+                if (! str_contains($e->getMessage(), 'stores_subdomain_unique')) {
+                    throw $e;
+                }
+
+                $validated['subdomain'] = Store::generateUniqueSubdomain($validated['name'] . ' ' . $attempts);
+            }
+        }
+
+        return response()->json(['error' => 'Não foi possível gerar um subdomínio único. Tente novamente.'], 500);
     }
 
     /**

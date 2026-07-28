@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Store extends Model
 {
@@ -169,7 +170,29 @@ class Store extends Model
     }
 
     /**
+     * Resolve uma loja por identificador imutável (ID numérico) ou legado
+     * (subdomínio/custom_domain/domínio). ID numérico tem prioridade e é
+     * muito mais rápido (PK única). Slugs/domínios continuam funcionando
+     * para backward compatibility.
+     */
+    public static function resolveByIdentifier(string $identifier): ?Store
+    {
+        if (is_numeric($identifier)) {
+            return static::where('id', (int) $identifier)
+                ->where('status', true)
+                ->with(['checkoutSettings', 'gateways' => function ($query) {
+                    $query->where('is_active', true);
+                }])
+                ->first();
+        }
+
+        return static::resolveByDomain($identifier);
+    }
+
+    /**
      * Gera um subdomínio slug a partir do nome, garantindo uniqueness.
+     * A lógica roda dentro de uma transação para minimizar race conditions
+     * entre criações simultâneas com mesmo nome.
      */
     public static function generateUniqueSubdomain(string $name): string
     {
@@ -188,16 +211,20 @@ class Store extends Model
         // Limita a 40 caracteres
         $base = substr($base, 0, 40);
 
-        // Verifica se é único, caso contrário adiciona sufixo
-        if (!static::where('subdomain', $base)->exists()) {
-            return $base;
-        }
+        return DB::transaction(function () use ($base) {
+            // Verifica se é único, caso contrário adiciona sufixo.
+            // Dentro da transação lemos um snapshot consistente; o controller
+            // ainda deve tratar violação UNIQUE como última barreira.
+            if (!static::where('subdomain', $base)->lockForUpdate()->exists()) {
+                return $base;
+            }
 
-        $suffix = 2;
-        while (static::where('subdomain', "{$base}-{$suffix}")->exists()) {
-            $suffix++;
-        }
+            $suffix = 2;
+            while (static::where('subdomain', "{$base}-{$suffix}")->lockForUpdate()->exists()) {
+                $suffix++;
+            }
 
-        return "{$base}-{$suffix}";
+            return "{$base}-{$suffix}";
+        });
     }
 }

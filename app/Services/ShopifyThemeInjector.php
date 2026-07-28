@@ -168,10 +168,13 @@ class ShopifyThemeInjector
 
         $apiBase = rtrim((string) config('services.shopify.public_api_base', config('app.url')), '/');
 
+        $snippet = str_replace('__CHECKOUT_J_API_BASE__', $apiBase, $this->snippetContent());
+        $snippet = str_replace('__STORE_ID__', (string) $store->id, $snippet);
+
         $this->request($store, 'PUT', $endpoint, [
             'asset' => [
                 'key' => self::SNIPPET_KEY,
-                'value' => str_replace('__CHECKOUT_J_API_BASE__', $apiBase, $this->snippetContent()),
+                'value' => $snippet,
             ],
         ]);
     }
@@ -359,8 +362,9 @@ class ShopifyThemeInjector
     }
 
     /**
-     * Conteúdo do snippet do checkout. Genérico — não depende de dados da loja.
-     * O domínio da loja é lido do Liquid via {{ shop.permanent_domain }}.
+     * Conteúdo do snippet do checkout.
+     * O domínio da loja é lido do Liquid via {{ shop.permanent_domain | json }}.
+     * O ID imutável da loja é injetado pelo placeholder __STORE_ID__.
      * A URL base da API é substituída em upsertSnippet pelo placeholder
      * __CHECKOUT_J_API_BASE__, evitando interpolação dentro de strings Liquid.
      */
@@ -376,10 +380,11 @@ class ShopifyThemeInjector
   'use strict';
 
   var SHOPIFY_DOMAIN = {{ shop.permanent_domain | json }};
+  var STORE_ID = __STORE_ID__;
   var API_BASE = {{ '__CHECKOUT_J_API_BASE__' | json }};
   var REDIRECT_PATH = '/api/shopify/checkout-redirect';
 
-  if (!SHOPIFY_DOMAIN || !API_BASE) return;
+  if (!SHOPIFY_DOMAIN || !API_BASE || !STORE_ID) return;
 
   // Idempotência: evita dupla injeção em temas que carregam o layout várias vezes.
   if (window.__checkoutJInjected) return;
@@ -423,7 +428,7 @@ class ShopifyThemeInjector
 
     return fetchJson(API_BASE + REDIRECT_PATH, {
       method: 'POST',
-      body: JSON.stringify({ shop: SHOPIFY_DOMAIN, items: items })
+      body: JSON.stringify({ store_id: STORE_ID, shop: SHOPIFY_DOMAIN, items: items })
     }).then(function (res) {
       if (!res || !res.redirect_url) throw new Error('Não foi possível gerar o link de checkout.');
       window.location.href = res.redirect_url;

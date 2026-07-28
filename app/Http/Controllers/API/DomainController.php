@@ -7,6 +7,7 @@ use App\Models\Domain;
 use App\Models\Store;
 use App\Services\Ssl\CaddyProvisioner;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DomainController extends Controller
 {
@@ -41,16 +42,25 @@ class DomainController extends Controller
             return response()->json(['error' => 'Este domínio não pode ser usado.'], 422);
         }
 
-        // Verifica se outra loja já usa este domínio
-        if (Domain::where('domain', $domain)->exists()) {
+        // Verifica se outra loja já usa este domínio dentro de uma transação
+        // para reduzir a janela de race condition entre cadastros simultâneos.
+        try {
+            $domainModel = DB::transaction(function () use ($store, $domain) {
+                if (Domain::where('domain', $domain)->lockForUpdate()->exists()) {
+                    throw new \RuntimeException('Domain already in use');
+                }
+
+                return $store->domains()->create([
+                    'domain' => $domain,
+                    'status' => 'pending',
+                    'ssl_status' => 'pending',
+                ]);
+            });
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            return response()->json(['error' => 'Este domínio já está em uso por outra loja.'], 422);
+        } catch (\RuntimeException $e) {
             return response()->json(['error' => 'Este domínio já está em uso por outra loja.'], 422);
         }
-
-        $domain = $store->domains()->create([
-            'domain' => $domain,
-            'status' => 'pending',
-            'ssl_status' => 'pending',
-        ]);
 
         // Instruções DNS para o usuário
         $appDomain = config('services.checkout.app_domain', "checkout.{$baseDomain}");
@@ -62,7 +72,7 @@ class DomainController extends Controller
         ];
 
         return response()->json([
-            'domain' => $domain,
+            'domain' => $domainModel,
             'instructions' => $instructions,
         ], 201);
     }
