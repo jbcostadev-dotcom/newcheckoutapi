@@ -40,6 +40,7 @@ class Order extends Model
         'shipping_complemento', 'shipping_bairro', 'shipping_cidade', 'shipping_uf',
         'shipping_method_id', 'shipping_price',
         'upsell_id', 'upsell_amount', 'upsell_status', 'upsell_product_id',
+        'tracking_parameters',
     ];
 
     protected $casts = [
@@ -48,6 +49,7 @@ class Order extends Model
         'shipping_price' => 'decimal:2',
         'installments' => 'integer',
         'gateway_expires_at' => 'datetime',
+        'tracking_parameters' => 'array',
     ];
 
     public function store()

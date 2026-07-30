@@ -123,6 +123,20 @@ class Store extends Model
         return $this->hasMany(Coupon::class);
     }
 
+    public function utmifySetting()
+    {
+        return $this->hasOne(UtmifySetting::class);
+    }
+
+    /**
+     * Indica se a integração Utmify está ativa (token + habilitada).
+     */
+    public function isUtmifyActive(): bool
+    {
+        $setting = $this->utmifySetting;
+        return $setting ? $setting->isActive() : false;
+    }
+
     /**
      * Indica se a loja possui Shopify conectada.
      */

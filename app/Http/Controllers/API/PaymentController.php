@@ -14,6 +14,7 @@ use App\Http\Controllers\API\AbandonedCartController;
 use App\Services\ShopifyCustomerSync;
 use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
+use App\Services\UtmifyService;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
 use App\Models\EmailTemplate;
@@ -66,6 +67,14 @@ class PaymentController extends Controller
             'shipping_address.cidade' => 'nullable|string|max:120',
             'shipping_address.uf' => 'nullable|string|max:2',
             'order_bump_id' => 'nullable|integer',
+            'tracking_parameters' => 'nullable|array',
+            'tracking_parameters.src' => 'nullable|string|max:500',
+            'tracking_parameters.sck' => 'nullable|string|max:500',
+            'tracking_parameters.utm_source' => 'nullable|string|max:500',
+            'tracking_parameters.utm_campaign' => 'nullable|string|max:500',
+            'tracking_parameters.utm_medium' => 'nullable|string|max:500',
+            'tracking_parameters.utm_content' => 'nullable|string|max:500',
+            'tracking_parameters.utm_term' => 'nullable|string|max:500',
         ]);
 
         $identifier = $validated['store_id'] ?? $validated['domain'];
@@ -373,6 +382,7 @@ class PaymentController extends Controller
                 'shipping_bairro' => $ship['bairro'] ?? null,
                 'shipping_cidade' => $ship['cidade'] ?? null,
                 'shipping_uf' => $ship['uf'] ?? null,
+                'tracking_parameters' => $validated['tracking_parameters'] ?? null,
             ]);
 
             foreach ($orderItemsData as $itemData) {
@@ -657,6 +667,9 @@ class PaymentController extends Controller
         // Se a Unipay já retornou "paid", marca o pedido Shopify como pago.
         $this->syncShopifyPaidIfPaid($store, $order->fresh());
 
+        // Envia o pedido à Utmify (best-effort) com o status inicial retornado pela gateway.
+        $this->dispatchUtmify($store, $order->fresh());
+
         // ── Notificações WhatsApp/E-mail — eventos do fluxo de pagamento ──
         $freshOrder = $order->fresh();
         if (in_array($freshOrder->status, [Order::STATUS_PAID, Order::STATUS_AUTHORIZED], true)) {
@@ -916,6 +929,11 @@ class PaymentController extends Controller
 
                 $this->dispatchWhatsApp(WhatsappTemplate::EVENT_PAYMENT_REFUSED, $freshOrder->store, $freshOrder);
                 $this->dispatchEmail(EmailTemplate::EVENT_PAYMENT_REFUSED, $freshOrder->store, $freshOrder);
+            }
+
+            // Sempre que o status muda no webhook, reenvia à Utmify (paid/refused/refunded/chargedback).
+            if ($freshOrder->status !== $previousStatus) {
+                $this->dispatchUtmify($freshOrder->store, $freshOrder);
             }
         }
 
@@ -1294,6 +1312,21 @@ class PaymentController extends Controller
         } catch (\Throwable $e) {
             Log::warning('E-mail dispatch falhou', [
                 'event' => $event,
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Envia o pedido à Utmify (best-effort) quando a loja tem a integração ativa.
+     */
+    private function dispatchUtmify(?Store $store, Order $order): void
+    {
+        try {
+            app(UtmifyService::class)->dispatchForOrder($order);
+        } catch (\Throwable $e) {
+            Log::warning('Utmify dispatch falhou', [
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),
             ]);

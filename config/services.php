@@ -78,6 +78,13 @@ return [
         'admin_url' => env('CADDY_ADMIN_URL', 'http://localhost:2019'),
     ],
 
+    // ── Utmify (rastreamento de vendas) ───────────────────────────────
+    // Credencial de API fica por loja, na tabela `utmify_settings`.
+    'utmify' => [
+        'api_url' => env('UTMIFY_API_URL', 'https://api.utmify.com.br'),
+        'platform' => env('UTMIFY_PLATFORM', 'Bersenker'),
+    ],
+
     // ── WhatsApp HTTP API (WAHA - API nao oficial) ───────────────────
     // Cada chip WhatsApp e uma sessao na WAHA. URL e chave sao globais;
     // cada conexao fica registrada na tabela whatsapp_instances.

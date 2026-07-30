@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\ShopifyOrderSync;
+use App\Services\UtmifyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -124,6 +125,16 @@ class OrderController extends Controller
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+
+        // Reenvia à Utmify quando o status muda manualmente (paid/refunded, etc.).
+        try {
+            app(UtmifyService::class)->dispatchForOrder($order->fresh());
+        } catch (\Throwable $e) {
+            Log::warning('Utmify dispatch (manual) falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return response()->json($order);

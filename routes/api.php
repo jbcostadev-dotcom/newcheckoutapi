@@ -23,6 +23,7 @@ use App\Http\Controllers\API\SocialProofController;
 use App\Http\Controllers\API\SslController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\UpsellController;
+use App\Http\Controllers\API\UtmifySettingController;
 use App\Http\Controllers\API\WhatsappChipController;
 use App\Http\Controllers\API\WhatsappLogController;
 use App\Http\Controllers\API\WhatsappTemplateController;
@@ -122,6 +123,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('stores/{store}/shopify/credentials', [ShopifyController::class, 'updateCredentials']);
     Route::post('stores/{store}/shopify/sync', [ShopifyController::class, 'sync']);
     Route::delete('stores/{store}/shopify', [ShopifyController::class, 'disconnect']);
+
+    // Utmify (credencial de API de rastreamento por loja)
+    Route::get('stores/{store}/utmify', [UtmifySettingController::class, 'show']);
+    Route::put('stores/{store}/utmify', [UtmifySettingController::class, 'update']);
 
     // Shopify — injeção do snippet de checkout no tema
     Route::post('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'injectCheckout']);
