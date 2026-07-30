@@ -12,6 +12,11 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
+        // Impede que um usuário já autenticado crie/emitir novas credenciais.
+        if ($request->user()) {
+            abort(403, 'Você já está autenticado.');
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
@@ -29,7 +34,7 @@ class AuthController extends Controller
         return response()->json([
             'access_token' => $token,
             'token_type' => 'Bearer',
-            'user' => $user
+            'user' => $user,
         ], 201);
     }
 
@@ -40,20 +45,28 @@ class AuthController extends Controller
             'password' => 'required|string',
         ]);
 
+        // Bloqueia emissão de novo token para quem já está autenticado —
+        // evita fixation/acúmulo de tokens. O cliente deve fazer logout antes.
+        if ($request->user()) {
+            abort(403, 'Você já está autenticado.');
+        }
+
         $user = User::where('email', $request->email)->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if (! $user || ! Hash::check($request->password, $user->password)) {
+            // Mensagem genérica intencionalmente não revela se é e-mail ou senha.
             throw ValidationException::withMessages([
                 'email' => ['As credenciais fornecidas estão incorretas.'],
             ]);
         }
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // Tokens expiram em 7 dias (ver config/sanctum.php) — limita janela de risco.
+        $token = $user->createToken('auth_token', expiresAt: now()->addDays(7))->plainTextToken;
 
         return response()->json([
             'access_token' => $token,
             'token_type' => 'Bearer',
-            'user' => $user
+            'user' => $user,
         ]);
     }
 
@@ -62,7 +75,7 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([
-            'message' => 'Deslogado com sucesso'
+            'message' => 'Deslogado com sucesso',
         ]);
     }
 
@@ -72,7 +85,7 @@ class AuthController extends Controller
 
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $user->id,
+            'email' => 'sometimes|required|string|email|max:255|unique:users,email,'.$user->id,
             'phone' => 'sometimes|nullable|string|max:30',
         ]);
 
@@ -90,7 +103,7 @@ class AuthController extends Controller
 
         $user = $request->user();
 
-        if (!Hash::check($request->current_password, $user->password)) {
+        if (! Hash::check($request->current_password, $user->password)) {
             throw ValidationException::withMessages([
                 'current_password' => ['A senha atual está incorreta.'],
             ]);
@@ -101,7 +114,7 @@ class AuthController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Senha atualizada com sucesso.'
+            'message' => 'Senha atualizada com sucesso.',
         ]);
     }
 }

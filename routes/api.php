@@ -1,38 +1,39 @@
 <?php
 
+use App\Http\Controllers\API\AbandonedCartController;
+use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\API\CheckoutController;
+use App\Http\Controllers\API\CheckoutSettingController;
+use App\Http\Controllers\API\CommunicationController;
+use App\Http\Controllers\API\CouponController;
+use App\Http\Controllers\API\CustomerController;
+use App\Http\Controllers\API\DomainController;
+use App\Http\Controllers\API\EmailLogController;
+use App\Http\Controllers\API\EmailTemplateController;
+use App\Http\Controllers\API\GatewayController;
+use App\Http\Controllers\API\LiveCheckoutController;
+use App\Http\Controllers\API\OrderBumpController;
+use App\Http\Controllers\API\OrderController;
+use App\Http\Controllers\API\PaymentController;
+use App\Http\Controllers\API\ProductController;
+use App\Http\Controllers\API\ShippingMethodController;
+use App\Http\Controllers\API\ShopifyController;
+use App\Http\Controllers\API\SmtpSettingController;
+use App\Http\Controllers\API\SocialProofController;
+use App\Http\Controllers\API\SslController;
+use App\Http\Controllers\API\StoreController;
+use App\Http\Controllers\API\UpsellController;
+use App\Http\Controllers\API\WhatsappChipController;
+use App\Http\Controllers\API\WhatsappLogController;
+use App\Http\Controllers\API\WhatsappTemplateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\API\AuthController;
-use App\Http\Controllers\API\StoreController;
-use App\Http\Controllers\API\ProductController;
-use App\Http\Controllers\API\CheckoutSettingController;
-use App\Http\Controllers\API\ShopifyController;
-use App\Http\Controllers\API\CheckoutController;
-use App\Http\Controllers\API\PaymentController;
-use App\Http\Controllers\API\DomainController;
-use App\Http\Controllers\API\CommunicationController;
-use App\Http\Controllers\API\OrderController;
-use App\Http\Controllers\API\GatewayController;
-use App\Http\Controllers\API\SslController;
-use App\Http\Controllers\API\ShippingMethodController;
-use App\Http\Controllers\API\SocialProofController;
-use App\Http\Controllers\API\CustomerController;
-use App\Http\Controllers\API\OrderBumpController;
-use App\Http\Controllers\API\UpsellController;
-use App\Http\Controllers\API\CouponController;
-use App\Http\Controllers\API\AbandonedCartController;
-use App\Http\Controllers\API\LiveCheckoutController;
-use App\Http\Controllers\API\WhatsappChipController;
-use App\Http\Controllers\API\WhatsappTemplateController;
-use App\Http\Controllers\API\WhatsappLogController;
-use App\Http\Controllers\API\SmtpSettingController;
-use App\Http\Controllers\API\EmailTemplateController;
-use App\Http\Controllers\API\EmailLogController;
 
 // ── Rotas públicas ──────────────────────────────────────────────────
 
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+// Login e cadastro com proteção anti-bruteforce (definida em AppServiceProvider).
+Route::middleware('throttle:register')->post('/register', [AuthController::class, 'register']);
+Route::middleware('throttle:login')->post('/login', [AuthController::class, 'login']);
 
 // Shopify OAuth (público — redirecionamento)
 Route::get('/shopify/install', [ShopifyController::class, 'install']);
