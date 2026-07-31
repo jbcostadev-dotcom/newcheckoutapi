@@ -2,22 +2,23 @@
 
 namespace App\Jobs;
 
+use App\Models\Store;
+use App\Services\CheckoutUrlGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-
-use App\Models\Store;
-use App\Services\CheckoutUrlGenerator;
 
 class SyncShopifyProducts implements ShouldQueue
 {
     use Queueable;
 
     public int $timeout = 600;
+
     public int $tries = 1;
 
     protected Store $store;
+
     protected CheckoutUrlGenerator $urlGenerator;
 
     public function __construct(Store $store)
@@ -31,7 +32,7 @@ class SyncShopifyProducts implements ShouldQueue
      */
     public function handle(): void
     {
-        if (!$this->store->isShopifyConnected()) {
+        if (! $this->store->isShopifyConnected()) {
             return;
         }
 
@@ -59,12 +60,13 @@ class SyncShopifyProducts implements ShouldQueue
                 $response = Http::withHeaders($headers)->get($endpoint);
             }
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::warning('Shopify sync falhou', [
                     'store' => $this->store->id,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
+
                 return;
             }
 
@@ -88,6 +90,10 @@ class SyncShopifyProducts implements ShouldQueue
                     // Atributos estruturados = combinação nome+valor de cada option.
                     $attributes = $this->buildAttributes($optionNames, $variant);
 
+                    // Dimensões e peso: a variante pode ter ou não; produto pai também.
+                    $dimensions = $this->extractDimensions($shopifyProduct, $variant);
+                    $weightData = $this->extractWeight($shopifyProduct, $variant);
+
                     $product = $this->store->products()->updateOrCreate(
                         [
                             'store_id' => $this->store->id,
@@ -98,6 +104,26 @@ class SyncShopifyProducts implements ShouldQueue
                             'name' => $parentTitle,
                             'parent_title' => $parentTitle,
                             'attributes' => $attributes ?: null,
+                            'sku' => $variant['sku'] ?? null,
+                            'barcode' => $variant['barcode'] ?? null,
+                            'weight' => $weightData['weight'],
+                            'weight_unit' => $weightData['weight_unit'],
+                            'grams' => $variant['grams'] ?? null,
+                            'height' => $dimensions['height'],
+                            'width' => $dimensions['width'],
+                            'length' => $dimensions['length'],
+                            'dimension_unit' => $dimensions['dimension_unit'],
+                            'product_type' => $shopifyProduct['product_type'] ?? null,
+                            'vendor' => $shopifyProduct['vendor'] ?? null,
+                            'tags' => $this->extractTags($shopifyProduct['tags'] ?? null),
+                            'taxable' => $variant['taxable'] ?? null,
+                            'requires_shipping' => $variant['requires_shipping'] ?? null,
+                            'inventory_policy' => $variant['inventory_policy'] ?? null,
+                            'fulfillment_service' => $variant['fulfillment_service'] ?? null,
+                            'inventory_item_id' => isset($variant['inventory_item_id']) ? (string) $variant['inventory_item_id'] : null,
+                            'position' => $variant['position'] ?? null,
+                            'tax_code' => $variant['tax_code'] ?? null,
+                            'cost' => $variant['cost'] ?? null,
                             'description' => $this->truncateDescription($shopifyProduct['body_html'] ?? null),
                             'price' => $variant['price'] ?? 0,
                             'compare_at_price' => $variant['compare_at_price'] ?? null,
@@ -137,7 +163,7 @@ class SyncShopifyProducts implements ShouldQueue
         }
 
         // Marca variantes Shopify que sumiram como inativas — preserva histórico de pedido.
-        if (!empty($seenVariantIds)) {
+        if (! empty($seenVariantIds)) {
             $activeVariantIds = $this->store->products()
                 ->whereNotNull('shopify_variant_id')
                 ->pluck('shopify_variant_id')
@@ -157,6 +183,64 @@ class SyncShopifyProducts implements ShouldQueue
             'shopify_domain' => $this->store->shopify_domain,
             'variants_imported' => count($seenVariantIds),
         ]);
+    }
+
+    /**
+     * Extrai peso da variante ou, se ausente, do produto pai.
+     * O REST Admin API da Shopify retorna "weight" + "weight_unit" no produto
+     * e/ou na variante; a variante costuma ter a versão mais específica.
+     *
+     * @return array{weight: float|null, weight_unit: string|null}
+     */
+    protected function extractWeight(array $shopifyProduct, array $variant): array
+    {
+        $weight = $variant['weight'] ?? $shopifyProduct['weight'] ?? null;
+        $unit = $variant['weight_unit'] ?? $shopifyProduct['weight_unit'] ?? null;
+
+        return [
+            'weight' => $weight === null ? null : (float) $weight,
+            'weight_unit' => $unit ? (string) $unit : null,
+        ];
+    }
+
+    /**
+     * Extrai dimensões da variante (campos customizados de shipping) ou do
+     * produto pai. A Shopify não expõe dimensões nativamente no REST clássico,
+     * mas mantemos o helper pronto para quando presentes (apps de frete ou
+     * metafields populados previamente).
+     *
+     * @return array{height: float|null, width: float|null, length: float|null, dimension_unit: string|null}
+     */
+    protected function extractDimensions(array $shopifyProduct, array $variant): array
+    {
+        $height = $variant['height'] ?? $shopifyProduct['height'] ?? null;
+        $width = $variant['width'] ?? $shopifyProduct['width'] ?? null;
+        $length = $variant['length'] ?? $shopifyProduct['length'] ?? null;
+        $unit = $variant['dimension_unit'] ?? $shopifyProduct['dimension_unit'] ?? null;
+
+        return [
+            'height' => $height === null ? null : (float) $height,
+            'width' => $width === null ? null : (float) $width,
+            'length' => $length === null ? null : (float) $length,
+            'dimension_unit' => $unit ? (string) $unit : null,
+        ];
+    }
+
+    /**
+     * Normaliza tags do Shopify (string separada por vírgula) para array.
+     *
+     * @return string[]|null
+     */
+    protected function extractTags(?string $tags): ?array
+    {
+        if ($tags === null || $tags === '') {
+            return null;
+        }
+
+        $list = array_map('trim', explode(',', $tags));
+        $list = array_values(array_filter($list, fn ($t) => $t !== ''));
+
+        return $list ?: null;
     }
 
     /**
@@ -181,7 +265,7 @@ class SyncShopifyProducts implements ShouldQueue
      * Monta a lista de atributos estruturados a partir das options do produto
      * Shopify e dos valores option1/option2/option3 da variante.
      *
-     * @param array<int,string|null> $optionNames
+     * @param  array<int,string|null>  $optionNames
      * @return array<int,array{name:string,value:string}>
      */
     protected function buildAttributes(array $optionNames, array $variant): array
@@ -198,7 +282,7 @@ class SyncShopifyProducts implements ShouldQueue
                 continue;
             }
             $name = $optionNames[$i] ?? null;
-            if (!$name || strtolower($name) === 'title') {
+            if (! $name || strtolower($name) === 'title') {
                 continue;
             }
             $attributes[] = [
@@ -216,7 +300,7 @@ class SyncShopifyProducts implements ShouldQueue
      */
     protected function getNextPageUrl(?string $linkHeader): ?string
     {
-        if (!$linkHeader) {
+        if (! $linkHeader) {
             return null;
         }
 

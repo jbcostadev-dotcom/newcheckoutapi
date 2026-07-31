@@ -103,18 +103,88 @@ class SyncShopifyProductsTest extends TestCase
         $this->assertTrue($store->products()->where('shopify_variant_id', '1')->value('is_active'));
     }
 
-    private function productPayload(int $productId, string $title, array $variantIds, ?string $description = null): array
+    public function test_syncs_product_details_from_shopify(): void
     {
+        $store = $this->createStore();
+
+        Http::fake([
+            'https://loja-teste.myshopify.com/admin/api/2025-07/products.json*' => Http::response([
+                'products' => [
+                    $this->productPayload(1, 'Produto A', [1], null, [
+                        'sku' => 'SKU-001',
+                        'barcode' => '7891234567890',
+                        'grams' => 500,
+                        'weight' => 0.5,
+                        'weight_unit' => 'kg',
+                        'height' => 10.5,
+                        'width' => 20.0,
+                        'length' => 30.0,
+                        'dimension_unit' => 'cm',
+                        'taxable' => true,
+                        'requires_shipping' => true,
+                        'inventory_policy' => 'deny',
+                        'fulfillment_service' => 'manual',
+                        'inventory_item_id' => 12345,
+                        'position' => 1,
+                        'tax_code' => 'P0000000',
+                        'cost' => '5.00',
+                    ], [
+                        'product_type' => 'Eletrônicos',
+                        'vendor' => 'Marca X',
+                        'tags' => 'tag1, tag2',
+                    ]),
+                ],
+            ]),
+        ]);
+
+        (new SyncShopifyProducts($store))->handle();
+
+        $this->assertDatabaseHas('products', [
+            'shopify_variant_id' => '1',
+            'sku' => 'SKU-001',
+            'barcode' => '7891234567890',
+            'grams' => 500,
+            'weight' => 0.5,
+            'weight_unit' => 'kg',
+            'height' => 10.5,
+            'width' => 20.0,
+            'length' => 30.0,
+            'dimension_unit' => 'cm',
+            'product_type' => 'Eletrônicos',
+            'vendor' => 'Marca X',
+            'taxable' => 1,
+            'requires_shipping' => 1,
+            'inventory_policy' => 'deny',
+            'fulfillment_service' => 'manual',
+            'inventory_item_id' => '12345',
+            'position' => 1,
+            'tax_code' => 'P0000000',
+            'cost' => 5.00,
+        ]);
+
+        $product = Product::where('shopify_variant_id', '1')->first();
+        $this->assertNotNull($product);
+        $this->assertEquals(['tag1', 'tag2'], $product->tags);
+    }
+
+    private function productPayload(
+        int $productId,
+        string $title,
+        array $variantIds,
+        ?string $description = null,
+        array $variantExtras = [],
+        array $productExtras = [],
+    ): array {
         $variants = [];
         foreach ($variantIds as $variantId) {
-            $variants[] = [
+            $variants[] = array_merge([
                 'id' => $variantId,
                 'price' => '10.00',
                 'option1' => 'Default Title',
-            ];
+            ], $variantExtras);
         }
 
-        return [
+        return array_merge([
             'id' => $productId,
             'title' => $title,
             'body_html' => $description ?? '<p>Descrição</p>',
@@ -122,6 +192,6 @@ class SyncShopifyProductsTest extends TestCase
             'image' => ['src' => 'https://example.com/image.jpg'],
             'options' => [['name' => 'Title']],
             'variants' => $variants,
-        ];
+        ], $productExtras);
     }
 }
