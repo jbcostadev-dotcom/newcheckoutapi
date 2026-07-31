@@ -128,6 +128,11 @@ class Store extends Model
         return $this->hasOne(UtmifySetting::class);
     }
 
+    public function melhorEnvioSetting()
+    {
+        return $this->hasOne(MelhorEnvioSetting::class);
+    }
+
     /**
      * Indica se a integração Utmify está ativa (token + habilitada).
      */
