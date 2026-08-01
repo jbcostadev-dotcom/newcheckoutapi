@@ -200,6 +200,33 @@ class CheckoutController extends Controller
         return $result;
     }
 
+    /**
+     * Constrói o bloco de configuração do Google Ads exposto ao checkout.
+     * Retorna apenas os campos necessários ao client-side (sem segredos).
+     */
+    private function buildGoogleAdsBlock($store): array
+    {
+        $setting = $store->googleAdsSetting;
+
+        if (!$setting || !$setting->isActive()) {
+            return ['enabled' => false];
+        }
+
+        $selectedIds = is_array($setting->selected_product_ids)
+            ? array_values(array_unique(array_map('intval', $setting->selected_product_ids)))
+            : [];
+
+        return [
+            'enabled' => true,
+            'pixel_id' => $setting->pixel_id,
+            'pixel_name' => $setting->pixel_name,
+            'conversion_label' => $setting->conversion_label,
+            'only_paid_sales' => (bool) $setting->only_paid_sales,
+            'only_selected_products' => (bool) $setting->only_selected_products,
+            'selected_product_ids' => $selectedIds,
+        ];
+    }
+
     public function show(Request $request)
     {
         $identifier = $request->query('store_id') ?? $request->query('domain');
@@ -278,6 +305,7 @@ class CheckoutController extends Controller
                 'id' => $store->id,
                 'name' => $store->name,
                 'settings' => $effectiveSettings,
+                'google_ads' => $this->buildGoogleAdsBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
@@ -359,6 +387,7 @@ class CheckoutController extends Controller
                 'id' => $store->id,
                 'name' => $store->name,
                 'settings' => $effectiveSettings,
+                'google_ads' => $this->buildGoogleAdsBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,

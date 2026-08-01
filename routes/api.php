@@ -11,6 +11,7 @@ use App\Http\Controllers\API\DomainController;
 use App\Http\Controllers\API\EmailLogController;
 use App\Http\Controllers\API\EmailTemplateController;
 use App\Http\Controllers\API\GatewayController;
+use App\Http\Controllers\API\GoogleAdsSettingController;
 use App\Http\Controllers\API\LiveCheckoutController;
 use App\Http\Controllers\API\MelhorEnvioSettingController;
 use App\Http\Controllers\API\OrderBumpController;
@@ -132,6 +133,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Melhor Envio (configuração de remetente e etiquetas por loja)
     Route::get('stores/{store}/melhor-envio', [MelhorEnvioSettingController::class, 'show']);
     Route::put('stores/{store}/melhor-envio', [MelhorEnvioSettingController::class, 'update']);
+
+    // Google Ads (configuração de pixel de conversão por loja)
+    Route::get('stores/{store}/google-ads', [GoogleAdsSettingController::class, 'show']);
+    Route::put('stores/{store}/google-ads', [GoogleAdsSettingController::class, 'update']);
 
     // Shopify — injeção do snippet de checkout no tema
     Route::post('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'injectCheckout']);

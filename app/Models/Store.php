@@ -133,12 +133,26 @@ class Store extends Model
         return $this->hasOne(MelhorEnvioSetting::class);
     }
 
+    public function googleAdsSetting()
+    {
+        return $this->hasOne(GoogleAdsSetting::class);
+    }
+
     /**
      * Indica se a integração Utmify está ativa (token + habilitada).
      */
     public function isUtmifyActive(): bool
     {
         $setting = $this->utmifySetting;
+        return $setting ? $setting->isActive() : false;
+    }
+
+    /**
+     * Indica se a integração Google Ads está ativa (pixel_id + habilitada).
+     */
+    public function isGoogleAdsActive(): bool
+    {
+        $setting = $this->googleAdsSetting;
         return $setting ? $setting->isActive() : false;
     }
 
@@ -182,7 +196,7 @@ class Store extends Model
             $q->where('domain', $domain)
               ->where('ssl_active', true);
         })
-        ->with(['checkoutSettings', 'gateways' => function ($query) {
+        ->with(['checkoutSettings', 'googleAdsSetting', 'gateways' => function ($query) {
             $query->where('is_active', true);
         }])
         ->first();
@@ -199,7 +213,7 @@ class Store extends Model
         if (is_numeric($identifier)) {
             return static::where('id', (int) $identifier)
                 ->where('status', true)
-                ->with(['checkoutSettings', 'gateways' => function ($query) {
+                ->with(['checkoutSettings', 'googleAdsSetting', 'gateways' => function ($query) {
                     $query->where('is_active', true);
                 }])
                 ->first();
