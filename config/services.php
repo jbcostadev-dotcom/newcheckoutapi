@@ -85,6 +85,14 @@ return [
         'platform' => env('UTMIFY_PLATFORM', 'Bersenker'),
     ],
 
+    // Meta Pixel + Conversions API. O token de cada loja fica criptografado
+    // em meta_pixel_settings; aqui ficam apenas endpoint e versão globais.
+    'meta' => [
+        'graph_url' => env('META_GRAPH_URL', 'https://graph.facebook.com'),
+        'graph_api_version' => env('META_GRAPH_API_VERSION', 'v23.0'),
+        'timeout' => env('META_GRAPH_TIMEOUT', 8),
+    ],
+
     // ── WhatsApp HTTP API (WAHA - API nao oficial) ───────────────────
     // Cada chip WhatsApp e uma sessao na WAHA. URL e chave sao globais;
     // cada conexao fica registrada na tabela whatsapp_instances.

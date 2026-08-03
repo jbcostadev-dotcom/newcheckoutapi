@@ -138,6 +138,11 @@ class Store extends Model
         return $this->hasOne(GoogleAdsSetting::class);
     }
 
+    public function metaPixelSetting()
+    {
+        return $this->hasOne(MetaPixelSetting::class);
+    }
+
     /**
      * Indica se a integração Utmify está ativa (token + habilitada).
      */
@@ -153,6 +158,12 @@ class Store extends Model
     public function isGoogleAdsActive(): bool
     {
         $setting = $this->googleAdsSetting;
+        return $setting ? $setting->isActive() : false;
+    }
+
+    public function isMetaPixelActive(): bool
+    {
+        $setting = $this->metaPixelSetting;
         return $setting ? $setting->isActive() : false;
     }
 
@@ -196,7 +207,7 @@ class Store extends Model
             $q->where('domain', $domain)
               ->where('ssl_active', true);
         })
-        ->with(['checkoutSettings', 'googleAdsSetting', 'gateways' => function ($query) {
+        ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'gateways' => function ($query) {
             $query->where('is_active', true);
         }])
         ->first();
@@ -213,7 +224,7 @@ class Store extends Model
         if (is_numeric($identifier)) {
             return static::where('id', (int) $identifier)
                 ->where('status', true)
-                ->with(['checkoutSettings', 'googleAdsSetting', 'gateways' => function ($query) {
+                ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'gateways' => function ($query) {
                     $query->where('is_active', true);
                 }])
                 ->first();

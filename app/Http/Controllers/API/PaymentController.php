@@ -15,6 +15,7 @@ use App\Services\ShopifyCustomerSync;
 use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use App\Services\UtmifyService;
+use App\Services\MetaConversionsApiService;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
 use App\Models\EmailTemplate;
@@ -23,6 +24,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
@@ -75,6 +77,14 @@ class PaymentController extends Controller
             'tracking_parameters.utm_medium' => 'nullable|string|max:500',
             'tracking_parameters.utm_content' => 'nullable|string|max:500',
             'tracking_parameters.utm_term' => 'nullable|string|max:500',
+            'tracking_parameters.fbclid' => 'nullable|string|max:500',
+            'tracking_parameters.fbp' => 'nullable|string|max:500',
+            'tracking_parameters.fbc' => 'nullable|string|max:500',
+            'tracking_parameters.landing_page' => 'nullable|url|max:2000',
+            'tracking_parameters.referrer' => 'nullable|url|max:2000',
+            'tracking_parameters.client_ip_address' => 'nullable|ip',
+            'tracking_parameters.client_user_agent' => 'nullable|string|max:500',
+            'tracking_parameters.meta_consent' => 'nullable|boolean',
         ]);
 
         $identifier = $validated['store_id'] ?? $validated['domain'];
@@ -83,6 +93,16 @@ class PaymentController extends Controller
         if (! $store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
         }
+
+        // IP e user-agent são obtidos no servidor para melhorar o Event Match
+        // Quality; valores enviados pelo navegador não podem sobrescrevê-los.
+        $validated['tracking_parameters'] = array_merge(
+            $validated['tracking_parameters'] ?? [],
+            [
+                'client_ip_address' => $request->ip(),
+                'client_user_agent' => Str::limit($request->userAgent() ?? '', 500, ''),
+            ]
+        );
 
         // Resolve the correct gateway based on the payment method configured in checkout settings.
         $settings = $store->checkoutSettings;
@@ -669,6 +689,7 @@ class PaymentController extends Controller
 
         // Envia o pedido à Utmify (best-effort) com o status inicial retornado pela gateway.
         $this->dispatchUtmify($store, $order->fresh());
+        $this->dispatchMetaPurchase($order->fresh());
 
         // ── Notificações WhatsApp/E-mail — eventos do fluxo de pagamento ──
         $freshOrder = $order->fresh();
@@ -934,6 +955,7 @@ class PaymentController extends Controller
             // Sempre que o status muda no webhook, reenvia à Utmify (paid/refused/refunded/chargedback).
             if ($freshOrder->status !== $previousStatus) {
                 $this->dispatchUtmify($freshOrder->store, $freshOrder);
+                $this->dispatchMetaPurchase($freshOrder);
             }
         }
 
@@ -1327,6 +1349,22 @@ class PaymentController extends Controller
             app(UtmifyService::class)->dispatchForOrder($order);
         } catch (\Throwable $e) {
             Log::warning('Utmify dispatch falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Envia Purchase server-side após aprovação, sem permitir que uma falha de
+     * tracking interrompa o webhook ou o pagamento.
+     */
+    private function dispatchMetaPurchase(Order $order): void
+    {
+        try {
+            app(MetaConversionsApiService::class)->dispatchPurchase($order);
+        } catch (\Throwable $e) {
+            Log::warning('Meta CAPI dispatch falhou', [
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),
             ]);

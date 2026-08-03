@@ -227,6 +227,33 @@ class CheckoutController extends Controller
         ];
     }
 
+    /**
+     * Expõe somente a configuração pública do Meta Pixel. Access token e
+     * test event code permanecem exclusivamente no backend.
+     */
+    private function buildMetaPixelBlock($store): array
+    {
+        $setting = $store->metaPixelSetting;
+        if (!$setting || !$setting->isActive()) {
+            return ['enabled' => false];
+        }
+
+        $selectedIds = is_array($setting->selected_product_ids)
+            ? array_values(array_unique(array_map('intval', $setting->selected_product_ids)))
+            : [];
+
+        return [
+            'enabled' => true,
+            'pixel_id' => $setting->pixel_id,
+            'browser_enabled' => (bool) $setting->isBrowserActive(),
+            'capi_enabled' => (bool) $setting->isCapiActive(),
+            'only_paid_sales' => (bool) $setting->only_paid_sales,
+            'only_selected_products' => (bool) $setting->only_selected_products,
+            'selected_product_ids' => $selectedIds,
+            'require_consent' => (bool) $setting->require_consent,
+        ];
+    }
+
     public function show(Request $request)
     {
         $identifier = $request->query('store_id') ?? $request->query('domain');
@@ -306,6 +333,7 @@ class CheckoutController extends Controller
                 'name' => $store->name,
                 'settings' => $effectiveSettings,
                 'google_ads' => $this->buildGoogleAdsBlock($store),
+                'meta_pixel' => $this->buildMetaPixelBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
@@ -388,6 +416,7 @@ class CheckoutController extends Controller
                 'name' => $store->name,
                 'settings' => $effectiveSettings,
                 'google_ads' => $this->buildGoogleAdsBlock($store),
+                'meta_pixel' => $this->buildMetaPixelBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
