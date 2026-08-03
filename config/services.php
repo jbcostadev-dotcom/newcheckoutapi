@@ -93,6 +93,13 @@ return [
         'timeout' => env('META_GRAPH_TIMEOUT', 8),
     ],
 
+    // TikTok Pixel + Events API. O token de cada loja fica criptografado
+    // em tiktok_pixel_settings; aqui ficam apenas endpoint e timeout globais.
+    'tiktok' => [
+        'events_api_url' => env('TIKTOK_EVENTS_API_URL', 'https://business-api.tiktok.com/open_api/v1.3/event/track/'),
+        'timeout' => env('TIKTOK_EVENTS_API_TIMEOUT', 8),
+    ],
+
     // ── WhatsApp HTTP API (WAHA - API nao oficial) ───────────────────
     // Cada chip WhatsApp e uma sessao na WAHA. URL e chave sao globais;
     // cada conexao fica registrada na tabela whatsapp_instances.

@@ -254,6 +254,33 @@ class CheckoutController extends Controller
         ];
     }
 
+    /**
+     * Expõe somente a configuração pública do TikTok Pixel. Access token e
+     * test event code permanecem exclusivamente no backend.
+     */
+    private function buildTikTokPixelBlock($store): array
+    {
+        $setting = $store->tiktokPixelSetting;
+        if (!$setting || !$setting->isActive()) {
+            return ['enabled' => false];
+        }
+
+        $selectedIds = is_array($setting->selected_product_ids)
+            ? array_values(array_unique(array_map('intval', $setting->selected_product_ids)))
+            : [];
+
+        return [
+            'enabled' => true,
+            'pixel_code' => $setting->pixel_code,
+            'browser_enabled' => (bool) $setting->isBrowserActive(),
+            'events_api_enabled' => (bool) $setting->isEventsApiActive(),
+            'only_paid_sales' => (bool) $setting->only_paid_sales,
+            'only_selected_products' => (bool) $setting->only_selected_products,
+            'selected_product_ids' => $selectedIds,
+            'require_consent' => (bool) $setting->require_consent,
+        ];
+    }
+
     public function show(Request $request)
     {
         $identifier = $request->query('store_id') ?? $request->query('domain');
@@ -284,7 +311,7 @@ class CheckoutController extends Controller
         $products = $store->products()
             ->whereIn('id', $uniqueIds)
             ->where('is_active', true)
-            ->get(['id', 'name', 'parent_title', 'attributes', 'description', 'price', 'compare_at_price', 'image_url', 'shopify_product_id', 'shopify_variant_id'])
+            ->get(['id', 'name', 'parent_title', 'attributes', 'description', 'price', 'compare_at_price', 'image_url', 'sku', 'product_type', 'vendor', 'tags', 'shopify_product_id', 'shopify_variant_id'])
             ->keyBy('id');
 
         if ($products->isEmpty()) {
@@ -334,6 +361,7 @@ class CheckoutController extends Controller
                 'settings' => $effectiveSettings,
                 'google_ads' => $this->buildGoogleAdsBlock($store),
                 'meta_pixel' => $this->buildMetaPixelBlock($store),
+                'tiktok_pixel' => $this->buildTikTokPixelBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
@@ -417,6 +445,7 @@ class CheckoutController extends Controller
                 'settings' => $effectiveSettings,
                 'google_ads' => $this->buildGoogleAdsBlock($store),
                 'meta_pixel' => $this->buildMetaPixelBlock($store),
+                'tiktok_pixel' => $this->buildTikTokPixelBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,

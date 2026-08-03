@@ -15,6 +15,8 @@ use App\Http\Controllers\API\GoogleAdsSettingController;
 use App\Http\Controllers\API\LiveCheckoutController;
 use App\Http\Controllers\API\MetaConversionController;
 use App\Http\Controllers\API\MetaPixelSettingController;
+use App\Http\Controllers\API\TikTokConversionController;
+use App\Http\Controllers\API\TikTokPixelSettingController;
 use App\Http\Controllers\API\MelhorEnvioSettingController;
 use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\OrderController;
@@ -75,6 +77,7 @@ Route::post('/checkout/live/remove', [LiveCheckoutController::class, 'remove']);
 
 // Meta Pixel + Conversions API (evento público, validado contra a loja ativa)
 Route::middleware('throttle:120,1')->post('/checkout/meta/event', [MetaConversionController::class, 'event']);
+Route::middleware('throttle:120,1')->post('/checkout/tiktok/event', [TikTokConversionController::class, 'event']);
 
 // SSL validation — público (consultado pelo Caddy On-Demand TLS)
 Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
@@ -146,6 +149,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Meta Pixel + Conversions API (credenciais server-side por loja)
     Route::get('stores/{store}/meta-pixel', [MetaPixelSettingController::class, 'show']);
     Route::put('stores/{store}/meta-pixel', [MetaPixelSettingController::class, 'update']);
+
+    // TikTok Pixel + Events API (credenciais server-side por loja)
+    Route::get('stores/{store}/tiktok-pixel', [TikTokPixelSettingController::class, 'show']);
+    Route::put('stores/{store}/tiktok-pixel', [TikTokPixelSettingController::class, 'update']);
 
     // Shopify — injeção do snippet de checkout no tema
     Route::post('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'injectCheckout']);

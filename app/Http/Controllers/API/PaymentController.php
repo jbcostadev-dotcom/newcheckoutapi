@@ -16,6 +16,7 @@ use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use App\Services\UtmifyService;
 use App\Services\MetaConversionsApiService;
+use App\Services\TikTokEventsApiService;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
 use App\Models\EmailTemplate;
@@ -77,14 +78,18 @@ class PaymentController extends Controller
             'tracking_parameters.utm_medium' => 'nullable|string|max:500',
             'tracking_parameters.utm_content' => 'nullable|string|max:500',
             'tracking_parameters.utm_term' => 'nullable|string|max:500',
+            'tracking_parameters.coupon' => 'nullable|string|max:120',
             'tracking_parameters.fbclid' => 'nullable|string|max:500',
             'tracking_parameters.fbp' => 'nullable|string|max:500',
             'tracking_parameters.fbc' => 'nullable|string|max:500',
+            'tracking_parameters.ttclid' => 'nullable|string|max:500',
+            'tracking_parameters.ttp' => 'nullable|string|max:500',
             'tracking_parameters.landing_page' => 'nullable|url|max:2000',
             'tracking_parameters.referrer' => 'nullable|url|max:2000',
             'tracking_parameters.client_ip_address' => 'nullable|ip',
             'tracking_parameters.client_user_agent' => 'nullable|string|max:500',
             'tracking_parameters.meta_consent' => 'nullable|boolean',
+            'tracking_parameters.tiktok_consent' => 'nullable|boolean',
         ]);
 
         $identifier = $validated['store_id'] ?? $validated['domain'];
@@ -690,6 +695,7 @@ class PaymentController extends Controller
         // Envia o pedido à Utmify (best-effort) com o status inicial retornado pela gateway.
         $this->dispatchUtmify($store, $order->fresh());
         $this->dispatchMetaPurchase($order->fresh());
+        $this->dispatchTikTokPurchase($order->fresh());
 
         // ── Notificações WhatsApp/E-mail — eventos do fluxo de pagamento ──
         $freshOrder = $order->fresh();
@@ -735,7 +741,7 @@ class PaymentController extends Controller
      */
     public function getOrderConfirmed(int $orderId)
     {
-        $order = Order::with(['items.product:id,name,image_url', 'store:id,name', 'shippingMethod:id,name'])
+        $order = Order::with(['items.product:id,name,image_url,product_type,vendor,sku,parent_title', 'store:id,name', 'shippingMethod:id,name'])
             ->find($orderId);
 
         if (! $order) {
@@ -754,6 +760,9 @@ class PaymentController extends Controller
                 'qty' => $item->qty,
                 'total' => (float) $item->unit_price * $item->qty,
                 'image_url' => $item->product?->image_url,
+                'product_type' => $item->product?->product_type,
+                'vendor' => $item->product?->vendor,
+                'sku' => $item->product?->sku,
             ];
         });
 
@@ -956,6 +965,7 @@ class PaymentController extends Controller
             if ($freshOrder->status !== $previousStatus) {
                 $this->dispatchUtmify($freshOrder->store, $freshOrder);
                 $this->dispatchMetaPurchase($freshOrder);
+                $this->dispatchTikTokPurchase($freshOrder);
             }
         }
 
@@ -1365,6 +1375,22 @@ class PaymentController extends Controller
             app(MetaConversionsApiService::class)->dispatchPurchase($order);
         } catch (\Throwable $e) {
             Log::warning('Meta CAPI dispatch falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Envia Purchase server-side para a TikTok após aprovação, sem permitir
+     * que uma falha de tracking interrompa o webhook ou o pagamento.
+     */
+    private function dispatchTikTokPurchase(Order $order): void
+    {
+        try {
+            app(TikTokEventsApiService::class)->dispatchPurchase($order);
+        } catch (\Throwable $e) {
+            Log::warning('TikTok Events API dispatch falhou', [
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),
             ]);

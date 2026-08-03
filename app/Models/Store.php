@@ -143,6 +143,11 @@ class Store extends Model
         return $this->hasOne(MetaPixelSetting::class);
     }
 
+    public function tiktokPixelSetting()
+    {
+        return $this->hasOne(TikTokPixelSetting::class);
+    }
+
     /**
      * Indica se a integração Utmify está ativa (token + habilitada).
      */
@@ -164,6 +169,12 @@ class Store extends Model
     public function isMetaPixelActive(): bool
     {
         $setting = $this->metaPixelSetting;
+        return $setting ? $setting->isActive() : false;
+    }
+
+    public function isTikTokPixelActive(): bool
+    {
+        $setting = $this->tiktokPixelSetting;
         return $setting ? $setting->isActive() : false;
     }
 
@@ -207,7 +218,7 @@ class Store extends Model
             $q->where('domain', $domain)
               ->where('ssl_active', true);
         })
-        ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'gateways' => function ($query) {
+        ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'gateways' => function ($query) {
             $query->where('is_active', true);
         }])
         ->first();
@@ -224,7 +235,7 @@ class Store extends Model
         if (is_numeric($identifier)) {
             return static::where('id', (int) $identifier)
                 ->where('status', true)
-                ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'gateways' => function ($query) {
+                ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'gateways' => function ($query) {
                     $query->where('is_active', true);
                 }])
                 ->first();
