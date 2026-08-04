@@ -24,6 +24,8 @@ class OrderBump extends Model
         'button_color',
         'button_text_color',
         'button_label',
+        'scarcity_timer_enabled',
+        'scarcity_timer_minutes',
         'is_active',
     ];
 
@@ -32,6 +34,8 @@ class OrderBump extends Model
         'show_credit_card' => 'boolean',
         'show_pix' => 'boolean',
         'show_boleto' => 'boolean',
+        'scarcity_timer_enabled' => 'boolean',
+        'scarcity_timer_minutes' => 'integer',
         'is_active' => 'boolean',
     ];
 

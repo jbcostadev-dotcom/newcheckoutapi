@@ -200,6 +200,8 @@ class CheckoutController extends Controller
                 'button_color' => $bump->button_color,
                 'button_text_color' => $bump->button_text_color,
                 'button_label' => $bump->button_label,
+                'scarcity_timer_enabled' => (bool) $bump->scarcity_timer_enabled,
+                'scarcity_timer_minutes' => (int) ($bump->scarcity_timer_minutes ?: 10),
             ];
         }
 

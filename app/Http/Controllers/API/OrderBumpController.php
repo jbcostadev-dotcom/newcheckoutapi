@@ -47,6 +47,8 @@ class OrderBumpController extends Controller
             'button_color' => 'nullable|string|max:20',
             'button_text_color' => 'nullable|string|max:20',
             'button_label' => 'nullable|string|max:100',
+            'scarcity_timer_enabled' => 'sometimes|boolean',
+            'scarcity_timer_minutes' => 'sometimes|integer|min:1|max:1440',
             'is_active' => 'boolean',
         ]);
 
@@ -94,6 +96,8 @@ class OrderBumpController extends Controller
             'button_color' => 'sometimes|nullable|string|max:20',
             'button_text_color' => 'sometimes|nullable|string|max:20',
             'button_label' => 'sometimes|nullable|string|max:100',
+            'scarcity_timer_enabled' => 'sometimes|boolean',
+            'scarcity_timer_minutes' => 'sometimes|integer|min:1|max:1440',
             'is_active' => 'boolean',
         ]);
 
