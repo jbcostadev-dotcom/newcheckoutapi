@@ -46,16 +46,29 @@ class DomainController extends Controller
         // para reduzir a janela de race condition entre cadastros simultâneos.
         try {
             $domainModel = DB::transaction(function () use ($store, $domain) {
+                $lockedStore = Store::query()
+                    ->whereKey($store->getKey())
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($lockedStore->domains()->exists()) {
+                    throw new \DomainException('Store already has a custom domain');
+                }
+
                 if (Domain::where('domain', $domain)->lockForUpdate()->exists()) {
                     throw new \RuntimeException('Domain already in use');
                 }
 
-                return $store->domains()->create([
+                return $lockedStore->domains()->create([
                     'domain' => $domain,
                     'status' => 'pending',
                     'ssl_status' => 'pending',
                 ]);
             });
+        } catch (\DomainException $e) {
+            return response()->json([
+                'message' => 'Esta loja ja possui um dominio personalizado. Remova o dominio atual para cadastrar outro.',
+            ], 422);
         } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
             return response()->json(['error' => 'Este domínio já está em uso por outra loja.'], 422);
         } catch (\RuntimeException $e) {
