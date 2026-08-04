@@ -17,6 +17,8 @@ use App\Services\UnipayService;
 use App\Services\UtmifyService;
 use App\Services\MetaConversionsApiService;
 use App\Services\TikTokEventsApiService;
+use App\Services\KwaiEventsApiService;
+use App\Services\TaboolaPostbackService;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
 use App\Models\EmailTemplate;
@@ -84,12 +86,17 @@ class PaymentController extends Controller
             'tracking_parameters.fbc' => 'nullable|string|max:500',
             'tracking_parameters.ttclid' => 'nullable|string|max:500',
             'tracking_parameters.ttp' => 'nullable|string|max:500',
+            'tracking_parameters.kwai_click_id' => 'nullable|string|max:500',
+            'tracking_parameters.tblci' => 'nullable|string|max:500',
+            'tracking_parameters.taboola_click_id' => 'nullable|string|max:500',
             'tracking_parameters.landing_page' => 'nullable|url|max:2000',
             'tracking_parameters.referrer' => 'nullable|url|max:2000',
             'tracking_parameters.client_ip_address' => 'nullable|ip',
             'tracking_parameters.client_user_agent' => 'nullable|string|max:500',
             'tracking_parameters.meta_consent' => 'nullable|boolean',
             'tracking_parameters.tiktok_consent' => 'nullable|boolean',
+            'tracking_parameters.kwai_consent' => 'nullable|boolean',
+            'tracking_parameters.taboola_consent' => 'nullable|boolean',
         ]);
 
         $identifier = $validated['store_id'] ?? $validated['domain'];
@@ -696,6 +703,8 @@ class PaymentController extends Controller
         $this->dispatchUtmify($store, $order->fresh());
         $this->dispatchMetaPurchase($order->fresh());
         $this->dispatchTikTokPurchase($order->fresh());
+        $this->dispatchKwaiPurchase($order->fresh());
+        $this->dispatchTaboolaPurchase($order->fresh());
 
         // ── Notificações WhatsApp/E-mail — eventos do fluxo de pagamento ──
         $freshOrder = $order->fresh();
@@ -966,6 +975,8 @@ class PaymentController extends Controller
                 $this->dispatchUtmify($freshOrder->store, $freshOrder);
                 $this->dispatchMetaPurchase($freshOrder);
                 $this->dispatchTikTokPurchase($freshOrder);
+                $this->dispatchKwaiPurchase($freshOrder);
+                $this->dispatchTaboolaPurchase($freshOrder);
             }
         }
 
@@ -1393,6 +1404,32 @@ class PaymentController extends Controller
             Log::warning('TikTok Events API dispatch falhou', [
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** Envia Purchase server-side para o Kwai quando a conta possui endpoint habilitado. */
+    private function dispatchKwaiPurchase(Order $order): void
+    {
+        try {
+            app(KwaiEventsApiService::class)->dispatchPurchase($order);
+        } catch (\Throwable $e) {
+            Log::warning('Kwai Events API dispatch falhou', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** Envia Purchase pelo postback S2S oficial do Taboola após aprovação. */
+    private function dispatchTaboolaPurchase(Order $order): void
+    {
+        try {
+            app(TaboolaPostbackService::class)->dispatchPurchase($order);
+        } catch (\Throwable $exception) {
+            Log::warning('Taboola postback dispatch falhou', [
+                'order_id' => $order->id,
+                'error' => $exception->getMessage(),
             ]);
         }
     }

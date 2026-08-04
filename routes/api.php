@@ -17,6 +17,10 @@ use App\Http\Controllers\API\MetaConversionController;
 use App\Http\Controllers\API\MetaPixelSettingController;
 use App\Http\Controllers\API\TikTokConversionController;
 use App\Http\Controllers\API\TikTokPixelSettingController;
+use App\Http\Controllers\API\KwaiConversionController;
+use App\Http\Controllers\API\KwaiPixelSettingController;
+use App\Http\Controllers\API\TaboolaConversionController;
+use App\Http\Controllers\API\TaboolaPixelSettingController;
 use App\Http\Controllers\API\MelhorEnvioSettingController;
 use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\OrderController;
@@ -78,6 +82,8 @@ Route::post('/checkout/live/remove', [LiveCheckoutController::class, 'remove']);
 // Meta Pixel + Conversions API (evento público, validado contra a loja ativa)
 Route::middleware('throttle:120,1')->post('/checkout/meta/event', [MetaConversionController::class, 'event']);
 Route::middleware('throttle:120,1')->post('/checkout/tiktok/event', [TikTokConversionController::class, 'event']);
+Route::middleware('throttle:120,1')->post('/checkout/kwai/event', [KwaiConversionController::class, 'event']);
+Route::middleware('throttle:120,1')->post('/checkout/taboola/event', [TaboolaConversionController::class, 'event']);
 
 // SSL validation — público (consultado pelo Caddy On-Demand TLS)
 Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
@@ -153,6 +159,14 @@ Route::middleware('auth:sanctum')->group(function () {
     // TikTok Pixel + Events API (credenciais server-side por loja)
     Route::get('stores/{store}/tiktok-pixel', [TikTokPixelSettingController::class, 'show']);
     Route::put('stores/{store}/tiktok-pixel', [TikTokPixelSettingController::class, 'update']);
+
+    // Kwai Pixel + API server-side (credenciais criptografadas por loja)
+    Route::get('stores/{store}/kwai-pixel', [KwaiPixelSettingController::class, 'show']);
+    Route::put('stores/{store}/kwai-pixel', [KwaiPixelSettingController::class, 'update']);
+
+    // Taboola Pixel + S2S postback (Account ID por loja)
+    Route::get('stores/{store}/taboola-pixel', [TaboolaPixelSettingController::class, 'show']);
+    Route::put('stores/{store}/taboola-pixel', [TaboolaPixelSettingController::class, 'update']);
 
     // Shopify — injeção do snippet de checkout no tema
     Route::post('stores/{store}/shopify/inject-checkout', [ShopifyController::class, 'injectCheckout']);

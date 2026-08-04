@@ -281,6 +281,50 @@ class CheckoutController extends Controller
         ];
     }
 
+    /** Exposes only public Kwai Pixel data; server credentials remain private. */
+    private function buildKwaiPixelBlock($store): array
+    {
+        $setting = $store->kwaiPixelSetting;
+        if (!$setting || !$setting->isActive()) return ['enabled' => false];
+        $selectedIds = is_array($setting->selected_product_ids)
+            ? array_values(array_unique(array_map('intval', $setting->selected_product_ids))) : [];
+        return [
+            'enabled' => true,
+            'pixel_code' => $setting->pixel_code,
+            'browser_enabled' => (bool) $setting->isBrowserActive(),
+            'events_api_enabled' => (bool) $setting->isEventsApiActive(),
+            'only_paid_sales' => (bool) $setting->only_paid_sales,
+            'only_selected_products' => (bool) $setting->only_selected_products,
+            'selected_product_ids' => $selectedIds,
+            'require_consent' => (bool) $setting->require_consent,
+        ];
+    }
+
+    /** Exposes the Taboola Account ID and event names; the postback URL stays server-side. */
+    private function buildTaboolaPixelBlock($store): array
+    {
+        $setting = $store->taboolaPixelSetting;
+        if (!$setting || !$setting->isActive()) return ['enabled' => false];
+        $selectedIds = is_array($setting->selected_product_ids)
+            ? array_values(array_unique(array_map('intval', $setting->selected_product_ids))) : [];
+        return [
+            'enabled' => true,
+            'account_id' => $setting->account_id,
+            'browser_enabled' => (bool) $setting->isBrowserActive(),
+            's2s_enabled' => (bool) $setting->isS2sActive(),
+            'only_paid_sales' => (bool) $setting->only_paid_sales,
+            'only_selected_products' => (bool) $setting->only_selected_products,
+            'selected_product_ids' => $selectedIds,
+            'require_consent' => (bool) $setting->require_consent,
+            'page_view_event_name' => $setting->page_view_event_name ?: 'page_view',
+            'view_content_event_name' => $setting->view_content_event_name ?: 'PRODUCT_VIEW',
+            'add_to_cart_event_name' => $setting->add_to_cart_event_name ?: 'ADD_TO_CART',
+            'initiate_checkout_event_name' => $setting->initiate_checkout_event_name ?: 'CHECKOUT',
+            'add_payment_info_event_name' => $setting->add_payment_info_event_name ?: 'ADD_PAYMENT_INFO',
+            'purchase_event_name' => $setting->purchase_event_name ?: 'PURCHASE',
+        ];
+    }
+
     public function show(Request $request)
     {
         $identifier = $request->query('store_id') ?? $request->query('domain');
@@ -362,6 +406,8 @@ class CheckoutController extends Controller
                 'google_ads' => $this->buildGoogleAdsBlock($store),
                 'meta_pixel' => $this->buildMetaPixelBlock($store),
                 'tiktok_pixel' => $this->buildTikTokPixelBlock($store),
+                'kwai_pixel' => $this->buildKwaiPixelBlock($store),
+                'taboola_pixel' => $this->buildTaboolaPixelBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,
@@ -446,6 +492,8 @@ class CheckoutController extends Controller
                 'google_ads' => $this->buildGoogleAdsBlock($store),
                 'meta_pixel' => $this->buildMetaPixelBlock($store),
                 'tiktok_pixel' => $this->buildTikTokPixelBlock($store),
+                'kwai_pixel' => $this->buildKwaiPixelBlock($store),
+                'taboola_pixel' => $this->buildTaboolaPixelBlock($store),
                 'gateways' => $store->gateways->map(function ($gateway) {
                     return [
                         'provider' => $gateway->provider,

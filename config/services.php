@@ -100,6 +100,18 @@ return [
         'timeout' => env('TIKTOK_EVENTS_API_TIMEOUT', 8),
     ],
 
+    // Kwai Pixel. O endpoint server-side é informado pelo Kwai para cada conta/região.
+    'kwai' => [
+        'events_api_url' => env('KWAI_EVENTS_API_URL'),
+        'timeout' => env('KWAI_EVENTS_API_TIMEOUT', 8),
+    ],
+
+    // Taboola S2S postback; the Account ID and optional override URL are per store.
+    'taboola' => [
+        'postback_url' => env('TABOOLA_POSTBACK_URL', 'https://trc.taboola.com/actions-handler/log/3/s2s-action'),
+        'timeout' => env('TABOOLA_POSTBACK_TIMEOUT', 8),
+    ],
+
     // ── WhatsApp HTTP API (WAHA - API nao oficial) ───────────────────
     // Cada chip WhatsApp e uma sessao na WAHA. URL e chave sao globais;
     // cada conexao fica registrada na tabela whatsapp_instances.

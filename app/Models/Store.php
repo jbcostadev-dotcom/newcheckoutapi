@@ -148,6 +148,16 @@ class Store extends Model
         return $this->hasOne(TikTokPixelSetting::class);
     }
 
+    public function kwaiPixelSetting()
+    {
+        return $this->hasOne(KwaiPixelSetting::class);
+    }
+
+    public function taboolaPixelSetting()
+    {
+        return $this->hasOne(TaboolaPixelSetting::class);
+    }
+
     /**
      * Indica se a integração Utmify está ativa (token + habilitada).
      */
@@ -175,6 +185,18 @@ class Store extends Model
     public function isTikTokPixelActive(): bool
     {
         $setting = $this->tiktokPixelSetting;
+        return $setting ? $setting->isActive() : false;
+    }
+
+    public function isKwaiPixelActive(): bool
+    {
+        $setting = $this->kwaiPixelSetting;
+        return $setting ? $setting->isActive() : false;
+    }
+
+    public function isTaboolaPixelActive(): bool
+    {
+        $setting = $this->taboolaPixelSetting;
         return $setting ? $setting->isActive() : false;
     }
 
@@ -218,7 +240,7 @@ class Store extends Model
             $q->where('domain', $domain)
               ->where('ssl_active', true);
         })
-        ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'gateways' => function ($query) {
+        ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'kwaiPixelSetting', 'taboolaPixelSetting', 'gateways' => function ($query) {
             $query->where('is_active', true);
         }])
         ->first();
@@ -235,7 +257,7 @@ class Store extends Model
         if (is_numeric($identifier)) {
             return static::where('id', (int) $identifier)
                 ->where('status', true)
-                ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'gateways' => function ($query) {
+                ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'kwaiPixelSetting', 'taboolaPixelSetting', 'gateways' => function ($query) {
                     $query->where('is_active', true);
                 }])
                 ->first();
