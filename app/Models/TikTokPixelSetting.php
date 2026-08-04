@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class TikTokPixelSetting extends Model
 {
+    protected $table = 'tiktok_pixel_settings';
+
     protected $fillable = [
         'store_id',
         'pixel_name',
