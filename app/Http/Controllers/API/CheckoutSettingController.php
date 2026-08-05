@@ -85,6 +85,7 @@ class CheckoutSettingController extends Controller
                 'scarcity_enabled' => 'boolean',
                 'scarcity_type' => 'nullable|string|in:countdown,stock,visitors',
                 'scarcity_text' => 'nullable|string|max:255',
+                'scarcity_title' => 'nullable|string|max:255',
                 'scarcity_countdown_minutes' => 'nullable|integer|min:1|max:999',
                 'pix_confirmation_title' => 'nullable|string|max:100',
                 'pix_confirmation_message' => 'nullable|string|max:500',

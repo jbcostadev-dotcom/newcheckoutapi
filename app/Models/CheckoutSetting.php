@@ -32,6 +32,7 @@ class CheckoutSetting extends Model
         'scarcity_enabled',
         'scarcity_type',
         'scarcity_text',
+        'scarcity_title',
         'scarcity_countdown_minutes',
         'pix_confirmation_title',
         'pix_confirmation_message',

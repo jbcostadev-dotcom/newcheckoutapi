@@ -22,7 +22,7 @@ return new class extends Migration
             $table->boolean('scarcity_enabled')->default(false)->after('step_title_font_size');
             $table->string('scarcity_type')->default('countdown')->after('scarcity_enabled');
             $table->string('scarcity_text')->nullable()->after('scarcity_type');
-            $table->integer('scarcity_countdown_minutes')->default(15)->after('scarcity_text');
+            $table->integer('scarcity_countdown_minutes')->default(20)->after('scarcity_text');
             $table->string('pix_confirmation_title')->default('Aguardando pagamento...')->after('scarcity_countdown_minutes');
             $table->text('pix_confirmation_message')->nullable()->after('pix_confirmation_title');
             $table->string('pix_confirmation_logo')->nullable()->after('pix_confirmation_message');
