@@ -347,6 +347,18 @@ class PaymentController extends Controller
 
         $finalTotal = round($total + ($shippingPrice ?? 0), 2);
 
+        // O desconto por meio de pagamento é decidido exclusivamente no servidor
+        // para que o valor exibido no checkout seja o mesmo enviado à gateway.
+        $paymentDiscountMap = [
+            'pix' => (float) ($settings->pix_discount_percentage ?? 1),
+            'boleto' => (float) ($settings->boleto_discount_percentage ?? 0),
+            'credit_card' => (float) ($settings->card_discount_percentage ?? 5),
+        ];
+        $paymentDiscountPercentage = min(100, max(0, $paymentDiscountMap[$paymentMethod] ?? 0));
+        if ($paymentDiscountPercentage > 0) {
+            $finalTotal = round($finalTotal * (1 - $paymentDiscountPercentage / 100), 2);
+        }
+
         // Apply installment interest to credit card payments.
         if ($paymentMethod === 'credit_card' && $interestMultiplier > 1) {
             $finalTotal = round($finalTotal * $interestMultiplier, 2);

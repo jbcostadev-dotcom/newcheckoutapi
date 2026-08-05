@@ -56,6 +56,9 @@ class CheckoutController extends Controller
             'card_gateway_id' => null,
             'boleto_gateway_id' => null,
             'default_payment_method' => 'credit_card',
+            'pix_discount_percentage' => 1,
+            'boleto_discount_percentage' => 0,
+            'card_discount_percentage' => 5,
         ];
     }
 
