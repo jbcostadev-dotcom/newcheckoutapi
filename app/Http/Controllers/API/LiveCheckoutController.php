@@ -72,7 +72,10 @@ class LiveCheckoutController extends Controller
         $session = [
             'store_id' => $store->id,
             'session_id' => $validated['session_id'],
-            'domain' => $validated['domain'],
+            // O checkout no formato /store/{id} envia apenas store_id. A
+            // validação permite isso, então não acesse a chave domain sem
+            // fallback; ela não estará presente no array validado.
+            'domain' => $validated['domain'] ?? $store->custom_domain ?? $store->subdomain,
             'step' => $validated['step'],
             'customer_name' => $validated['customer_name'] ?? null,
             'customer_email' => isset($validated['customer_email']) ? strtolower(trim($validated['customer_email'])) : null,
