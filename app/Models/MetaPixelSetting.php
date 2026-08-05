@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 
 class MetaPixelSetting extends Model
@@ -47,7 +48,17 @@ class MetaPixelSetting extends Model
 
     public function isCapiActive(): bool
     {
-        return $this->enabled && $this->capi_enabled && !empty($this->pixel_id) && !empty($this->access_token);
+        if (! $this->enabled || ! $this->capi_enabled || empty($this->pixel_id)) {
+            return false;
+        }
+
+        try {
+            return ! empty($this->access_token);
+        } catch (DecryptException) {
+            // Uma APP_KEY alterada torna tokens já salvos indecifráveis. Não
+            // deixe uma integração inválida impedir a abertura do checkout.
+            return false;
+        }
     }
 
     public function isActive(): bool
