@@ -79,6 +79,7 @@ class CheckoutSettingController extends Controller
                 'announcement_bar_bg' => 'nullable|string|max:7',
                 'announcement_bar_text_color' => 'nullable|string|max:7',
                 'summary_title' => 'nullable|string|max:100',
+                'summary_default_expanded' => 'boolean',
                 'summary_show_discount' => 'boolean',
                 'summary_coupon_enabled' => 'boolean',
                 'step_title_font_size' => 'nullable|string|max:10',

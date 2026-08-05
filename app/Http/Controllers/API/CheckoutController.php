@@ -28,6 +28,7 @@ class CheckoutController extends Controller
             'announcement_bar_text_color' => '#d4a843',
             'banner_height' => 'md',
             'summary_title' => 'Resumo do pedido',
+            'summary_default_expanded' => true,
             'summary_show_discount' => true,
             'summary_coupon_enabled' => true,
             'step_title_font_size' => '1.25rem',
