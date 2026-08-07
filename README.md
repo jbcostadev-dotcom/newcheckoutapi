@@ -9,6 +9,27 @@
 
 ## About Laravel
 
+## jCheckout — Conquistas
+
+Após publicar o backend, aplique o catálogo e crie o link de arquivos públicos:
+
+```bash
+php artisan migrate --force
+php artisan db:seed --force
+php artisan storage:link
+```
+
+O acesso ao painel em `/dashboard/admin/conquistas` depende da função persistida
+no banco — não do e-mail usado no frontend. Para conceder o primeiro acesso de
+proprietário a uma conta já criada, execute no servidor:
+
+```bash
+php artisan jcheckout:make-super-admin admin@admin.com
+```
+
+O comando pede confirmação. O painel permite publicar metas e enviar somente
+PNG, JPEG ou WebP de até 5 MB; alterações ficam registradas em `admin_audit_logs`.
+
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
 - [Simple, fast routing engine](https://laravel.com/docs/routing).

@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\API\AbandonedCartController;
 use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\API\AchievementController;
+use App\Http\Controllers\API\AdminAchievementController;
 use App\Http\Controllers\API\CheckoutController;
 use App\Http\Controllers\API\CheckoutSettingController;
 use App\Http\Controllers\API\CommunicationController;
@@ -114,6 +116,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('stores/{store}/orders', [OrderController::class, 'index']);
     Route::get('stores/{store}/orders/{order}', [OrderController::class, 'show']);
     Route::patch('stores/{store}/orders/{order}/status', [OrderController::class, 'updateStatus']);
+
+    // Conquistas da loja (o escopo é sempre validado pelo proprietário da loja)
+    Route::get('stores/{store}/achievements', [AchievementController::class, 'index']);
 
     // Gateways
     Route::get('stores/{store}/gateways', [GatewayController::class, 'index']);
@@ -245,4 +250,17 @@ Route::middleware('auth:sanctum')->group(function () {
     // E-mail — Logs (Entregas/Falhas)
     Route::get('stores/{store}/email/logs', [EmailLogController::class, 'index']);
     Route::delete('stores/{store}/email/logs/{log}', [EmailLogController::class, 'destroy']);
+});
+
+// Administração da plataforma: autorização no servidor, nunca por e-mail no frontend.
+Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(function () {
+    Route::get('achievements', [AdminAchievementController::class, 'index']);
+    Route::get('audit-logs', [AdminAchievementController::class, 'auditLogs']);
+    Route::post('achievements', [AdminAchievementController::class, 'store']);
+    Route::put('achievements/{achievement}', [AdminAchievementController::class, 'update']);
+    Route::delete('achievements/{achievement}', [AdminAchievementController::class, 'destroy']);
+    Route::post('achievements/{achievement}/image', [AdminAchievementController::class, 'upload'])
+        ->middleware('throttle:30,1');
+    Route::post('stores/{store}/achievements/recalculate', [AdminAchievementController::class, 'recalculate'])
+        ->middleware('throttle:30,1');
 });

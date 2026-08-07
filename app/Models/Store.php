@@ -123,6 +123,11 @@ class Store extends Model
         return $this->hasMany(Coupon::class);
     }
 
+    public function achievementAwards()
+    {
+        return $this->hasMany(AchievementAward::class);
+    }
+
     public function utmifySetting()
     {
         return $this->hasOne(UtmifySetting::class);
