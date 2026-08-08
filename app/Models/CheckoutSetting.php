@@ -26,6 +26,7 @@ class CheckoutSetting extends Model
         'announcement_bar_bg',
         'announcement_bar_text_color',
         'summary_title',
+        'summary_total_text_color',
         'summary_default_expanded',
         'summary_show_discount',
         'summary_coupon_enabled',
