@@ -83,6 +83,7 @@ class CheckoutSettingController extends Controller
                 'summary_default_expanded' => 'boolean',
                 'summary_show_discount' => 'boolean',
                 'summary_coupon_enabled' => 'boolean',
+                'quantity_selector_enabled' => 'boolean',
                 'step_title_font_size' => 'nullable|string|max:10',
                 'step_number_color' => 'nullable|string|max:7',
                 'input_border_radius' => 'nullable|string|in:none,medium,large',

@@ -32,6 +32,7 @@ class CheckoutController extends Controller
             'summary_default_expanded' => true,
             'summary_show_discount' => true,
             'summary_coupon_enabled' => true,
+            'quantity_selector_enabled' => true,
             'step_title_font_size' => '1.25rem',
             'scarcity_enabled' => false,
             'scarcity_type' => 'countdown',
