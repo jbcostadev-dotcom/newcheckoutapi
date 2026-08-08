@@ -352,11 +352,11 @@ class UpsellController extends Controller
     }
 
     /**
-     * Normaliza o número de parcelamentos dentro do limite configurado na gateway.
+     * Normaliza o número de parcelamentos dentro do limite global do checkout.
      */
-    private function normalizeInstallments($gateway, int $installments): int
+    private function normalizeInstallments($gateway, int $installments, ?int $configuredLimit = null): int
     {
-        $limit = (int) ($gateway->installment_limit ?? 12);
+        $limit = (int) ($configuredLimit ?? $gateway->installment_limit ?? 12);
         if ($installments > $limit) {
             $installments = $limit;
         }
@@ -390,8 +390,8 @@ class UpsellController extends Controller
     }
 
     /**
-     * Monta as configurações de parcelamento usando a gateway do pedido ou
-     * a mesma lógica de fallback do checkout.
+     * Monta as configurações de parcelamento usando as taxas da gateway do pedido
+     * e os limites globais do checkout.
      */
     private function buildInstallmentConfig(Store $store, ?int $orderGatewayId): ?array
     {
@@ -427,10 +427,10 @@ class UpsellController extends Controller
         $installmentType = $gateway->installment_type ?? 'default';
         $defaultRate = (float) ($gateway->default_installment_rate ?? 3.14);
         $customRates = $gateway->installment_rates ?? array_fill(0, 12, $defaultRate);
-        $limit = max(1, min(12, (int) ($gateway->installment_limit ?? 12)));
+        $limit = max(1, min(12, (int) ($settings?->card_installment_limit ?? 12)));
         $preSelected = max(
             1,
-            min($limit, (int) ($gateway->pre_selected_installment ?? 1))
+            min($limit, (int) ($settings?->card_pre_selected_installment ?? 1))
         );
         $interestFree = max(
             1,
@@ -536,7 +536,11 @@ class UpsellController extends Controller
 
         // Aplica as mesmas taxas de parcelamento configuradas na gateway (igual ao checkout).
         $primaryGateway = $gatewaysToTry[0];
-        $installments = $this->normalizeInstallments($primaryGateway, $installments);
+        $installments = $this->normalizeInstallments(
+            $primaryGateway,
+            $installments,
+            $order->store->checkoutSettings?->card_installment_limit
+        );
         $finalPrice = $this->applyInstallmentInterest($primaryGateway, $finalPrice, $installments);
 
         $payload = $this->buildUpsellCardPayload($order, $finalPrice, $installments);

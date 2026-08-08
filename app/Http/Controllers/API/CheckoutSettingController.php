@@ -142,6 +142,8 @@ class CheckoutSettingController extends Controller
                 'boleto_gateway_ids' => 'nullable|array',
                 'boleto_gateway_ids.*' => 'integer|exists:gateways,id',
                 'default_payment_method' => 'nullable|string|in:credit_card,pix,boleto',
+                'card_pre_selected_installment' => 'nullable|integer|min:1|max:12',
+                'card_installment_limit' => 'nullable|integer|min:1|max:12',
                 'pix_discount_percentage' => 'nullable|numeric|min:0|max:100',
                 'boleto_discount_percentage' => 'nullable|numeric|min:0|max:100',
                 'card_discount_percentage' => 'nullable|numeric|min:0|max:100',

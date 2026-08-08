@@ -204,7 +204,7 @@ class PaymentController extends Controller
 
         // Resolve installment rate and apply to final total for credit card.
         $installments = (int) ($validated['installments'] ?? 1);
-        $installmentLimit = max(1, min(12, (int) ($gateway->installment_limit ?? 12)));
+        $installmentLimit = max(1, min(12, (int) ($settings->card_installment_limit ?? 12)));
         if ($installments > $installmentLimit) {
             $installments = $installmentLimit;
         }

@@ -61,6 +61,8 @@ class CheckoutController extends Controller
             'card_gateway_id' => null,
             'boleto_gateway_id' => null,
             'default_payment_method' => 'credit_card',
+            'card_pre_selected_installment' => 1,
+            'card_installment_limit' => 12,
             'pix_discount_percentage' => 1,
             'boleto_discount_percentage' => 0,
             'card_discount_percentage' => 5,
@@ -125,10 +127,10 @@ class CheckoutController extends Controller
                 $installmentType = $gateway->installment_type ?? 'default';
                 $defaultRate = (float) ($gateway->default_installment_rate ?? 3.14);
                 $customRates = $gateway->installment_rates ?? array_fill(0, 12, $defaultRate);
-                $limit = max(1, min(12, (int) ($gateway->installment_limit ?? 12)));
+                $limit = max(1, min(12, (int) ($settings->card_installment_limit ?? 12)));
                 $preSelected = max(
                     1,
-                    min($limit, (int) ($gateway->pre_selected_installment ?? 1))
+                    min($limit, (int) ($settings->card_pre_selected_installment ?? 1))
                 );
                 $interestFree = max(
                     1,
