@@ -14,6 +14,9 @@ class CheckoutSetting extends Model
         'banner_url',
         'banner_height',
         'enable_order_bump',
+        'order_bump_display_mode',
+        'order_bump_scarcity_timer_enabled',
+        'order_bump_scarcity_timer_minutes',
         'dark_mode',
         'button_text',
         'banner_message',
@@ -93,6 +96,9 @@ class CheckoutSetting extends Model
 
     protected $casts = [
         'enable_order_bump' => 'boolean',
+        'order_bump_display_mode' => 'string',
+        'order_bump_scarcity_timer_enabled' => 'boolean',
+        'order_bump_scarcity_timer_minutes' => 'integer',
         'dark_mode' => 'boolean',
         'header_store_name_visible' => 'boolean',
         'header_secure_badge' => 'boolean',

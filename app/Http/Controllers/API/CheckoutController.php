@@ -19,6 +19,9 @@ class CheckoutController extends Controller
             'secondary_color' => '#8b5cf6',
             'dark_mode' => true,
             'enable_order_bump' => true,
+            'order_bump_display_mode' => 'stacked',
+            'order_bump_scarcity_timer_enabled' => false,
+            'order_bump_scarcity_timer_minutes' => 10,
             'button_text' => 'Finalizar Compra',
             'banner_message' => 'Digite aqui a mensagem',
             'header_store_name_visible' => true,
@@ -153,7 +156,7 @@ class CheckoutController extends Controller
      * Cada bump traz os dados do produto oferecido, o preço original e o
      * preço com desconto, além de cores/labels para personalização visual.
      */
-    private function buildOrderBumps($store, array $productIds)
+    private function buildOrderBumps($store, array $productIds, $settings)
     {
         $bumps = $store->orderBumps()
             ->with(['product:id,name,parent_title,attributes,price,compare_at_price,image_url'])
@@ -210,8 +213,8 @@ class CheckoutController extends Controller
                 'button_color' => $bump->button_color,
                 'button_text_color' => $bump->button_text_color,
                 'button_label' => $bump->button_label,
-                'scarcity_timer_enabled' => (bool) $bump->scarcity_timer_enabled,
-                'scarcity_timer_minutes' => (int) ($bump->scarcity_timer_minutes ?: 10),
+                'scarcity_timer_enabled' => (bool) ($settings->order_bump_scarcity_timer_enabled ?? false),
+                'scarcity_timer_minutes' => (int) ($settings->order_bump_scarcity_timer_minutes ?: 10),
             ];
         }
 
@@ -437,7 +440,7 @@ class CheckoutController extends Controller
             'products' => $items,
             'total' => round($total, 2),
             'shipping_methods' => $shippingMethods,
-            'order_bumps' => $this->buildOrderBumps($store, $uniqueIds),
+            'order_bumps' => $this->buildOrderBumps($store, $uniqueIds, $effectiveSettings),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
@@ -524,7 +527,7 @@ class CheckoutController extends Controller
             'total' => 99.90,
             'preview' => true,
             'shipping_methods' => $shippingMethods,
-            'order_bumps' => $this->buildOrderBumps($store, [1, 2]),
+            'order_bumps' => $this->buildOrderBumps($store, [1, 2], $effectiveSettings),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
