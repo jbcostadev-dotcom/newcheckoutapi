@@ -29,6 +29,7 @@ class GatewayController extends Controller
         $store = $request->user()->stores()->findOrFail($storeId);
 
         $validated = $request->validate([
+            'name' => 'required|string|max:255',
             'provider' => 'required|string|max:255',
             'api_key' => 'nullable|string|max:1000',
             'secret_key' => 'nullable|string|max:1000',
@@ -57,6 +58,7 @@ class GatewayController extends Controller
         $gateway = $store->gateways()->findOrFail($gatewayId);
 
         $validated = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
             'provider' => 'sometimes|string|max:255',
             'api_key' => 'nullable|string|max:1000',
             'secret_key' => 'nullable|string|max:1000',

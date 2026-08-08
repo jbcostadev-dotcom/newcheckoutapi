@@ -8,6 +8,7 @@ class Gateway extends Model
 {
     protected $fillable = [
         'store_id',
+        'name',
         'provider',
         'api_key',
         'secret_key',
