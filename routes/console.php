@@ -13,3 +13,11 @@ Schedule::command('abandoned-carts:update-expired')->everyFiveMinutes();
 Schedule::command('whatsapp:process-recovery')->everyFiveMinutes();
 
 Schedule::command('email:process-recovery')->everyFiveMinutes();
+
+Schedule::command('domains:sync-cloudflare')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+Schedule::command('domains:sync-cloudflare --include-active')
+    ->hourly()
+    ->withoutOverlapping();

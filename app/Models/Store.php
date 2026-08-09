@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 class Store extends Model
 {
     protected $fillable = [
+        'user_id',
         'name',
         'type',
         'subdomain',
@@ -239,11 +240,12 @@ class Store extends Model
 
         return $query->where(function ($q) use ($domain) {
             $q->where('subdomain', $domain)
-              ->orWhere('custom_domain', $domain);
-        })
-        ->orWhereHas('domains', function ($q) use ($domain) {
-            $q->where('domain', $domain)
-              ->where('ssl_active', true);
+                ->orWhere('custom_domain', $domain)
+                ->orWhereHas('domains', function ($domainQuery) use ($domain) {
+                    $domainQuery->where('domain', $domain)
+                        ->where('ssl_active', true)
+                        ->where('status', 'active');
+                });
         })
         ->with(['checkoutSettings', 'googleAdsSetting', 'metaPixelSetting', 'tiktokPixelSetting', 'kwaiPixelSetting', 'taboolaPixelSetting', 'gateways' => function ($query) {
             $query->where('is_active', true);

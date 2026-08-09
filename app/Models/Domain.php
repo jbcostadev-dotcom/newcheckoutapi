@@ -15,12 +15,17 @@ class Domain extends Model
         'dns_verified_at',
         'ssl_status',
         'verification_token',
+        'cloudflare_custom_hostname_id',
+        'cloudflare_hostname_status',
+        'cloudflare_error',
+        'cloudflare_synced_at',
     ];
 
     protected $casts = [
         'is_primary' => 'boolean',
         'ssl_active' => 'boolean',
         'dns_verified_at' => 'datetime',
+        'cloudflare_synced_at' => 'datetime',
     ];
 
     public function store()

@@ -4,7 +4,10 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Store;
+use App\Services\Ssl\CloudflareCustomHostnameService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class StoreController extends Controller
 {
@@ -25,7 +28,6 @@ class StoreController extends Controller
             'name' => 'required|string|max:255',
             'type' => 'required|string|max:255',
             'subdomain' => 'nullable|string|max:255|unique:stores,subdomain',
-            'custom_domain' => 'nullable|string|max:255|unique:stores,custom_domain',
         ]);
 
         // Auto-gera subdomínio único a partir do nome se não informado.
@@ -78,14 +80,13 @@ class StoreController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'type' => 'sometimes|required|string|max:255',
             'subdomain' => 'sometimes|required|string|max:255|unique:stores,subdomain,' . $store->id,
-            'custom_domain' => 'nullable|string|max:255|unique:stores,custom_domain,' . $store->id,
             'status' => 'boolean'
         ]);
 
         $store->update($validated);
 
-        // Se subdomain ou custom_domain mudaram, regenera os links de checkout.
-        if (array_key_exists('subdomain', $validated) || array_key_exists('custom_domain', $validated)) {
+        // custom_domain so pode ser alterado pelo fluxo validado da Cloudflare.
+        if (array_key_exists('subdomain', $validated)) {
             $store->regenerateProductUrls();
         }
 
@@ -95,9 +96,28 @@ class StoreController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id, Request $request)
-    {
+    public function destroy(
+        string $id,
+        Request $request,
+        CloudflareCustomHostnameService $cloudflare,
+    ) {
         $store = $request->user()->stores()->findOrFail($id);
+
+        try {
+            foreach ($store->domains as $domain) {
+                $cloudflare->delete($domain->cloudflare_custom_hostname_id, $domain->domain);
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Falha ao remover Custom Hostname antes de excluir a loja.', [
+                'store_id' => $store->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Nao foi possivel remover o dominio da Cloudflare. Tente novamente.',
+            ], 502);
+        }
+
         $store->delete();
 
         return response()->json(null, 204);

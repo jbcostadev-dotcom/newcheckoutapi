@@ -32,7 +32,6 @@ use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\ShopifyController;
 use App\Http\Controllers\API\SmtpSettingController;
 use App\Http\Controllers\API\SocialProofController;
-use App\Http\Controllers\API\SslController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\UpsellController;
 use App\Http\Controllers\API\UtmifySettingController;
@@ -86,9 +85,6 @@ Route::middleware('throttle:120,1')->post('/checkout/meta/event', [MetaConversio
 Route::middleware('throttle:120,1')->post('/checkout/tiktok/event', [TikTokConversionController::class, 'event']);
 Route::middleware('throttle:120,1')->post('/checkout/kwai/event', [KwaiConversionController::class, 'event']);
 Route::middleware('throttle:120,1')->post('/checkout/taboola/event', [TaboolaConversionController::class, 'event']);
-
-// SSL validation — público (consultado pelo Caddy On-Demand TLS)
-Route::get('/ssl/domain-check', [SslController::class, 'domainCheck']);
 
 // ── Rotas autenticadas (Sanctum) ──────────────────────────────────────
 

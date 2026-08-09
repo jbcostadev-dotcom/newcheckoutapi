@@ -73,9 +73,13 @@ return [
         'app_domain' => env('CHECKOUT_APP_DOMAIN', 'checkout.bersenker.shop'),
     ],
 
-    // ── Caddy (On-Demand TLS / Admin API) ─────────────────────────────
-    'caddy' => [
-        'admin_url' => env('CADDY_ADMIN_URL', 'http://localhost:2019'),
+    // ── Cloudflare for SaaS (Custom Hostnames) ─────────────────────────
+    'cloudflare' => [
+        'api_token' => env('CLOUDFLARE_API_TOKEN'),
+        'zone_id' => env('CLOUDFLARE_ZONE_ID'),
+        'saas_cname_target' => env('CLOUDFLARE_SAAS_CNAME_TARGET', 'customers.bersenker.shop'),
+        'saas_fallback_origin' => env('CLOUDFLARE_SAAS_FALLBACK_ORIGIN', 'saas-origin.bersenker.shop'),
+        'timeout' => env('CLOUDFLARE_API_TIMEOUT', 10),
     ],
 
     // ── Utmify (rastreamento de vendas) ───────────────────────────────
