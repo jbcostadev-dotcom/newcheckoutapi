@@ -19,10 +19,6 @@ class OrderBump extends Model
         'show_boleto',
         'offer_title',
         'offer_message',
-        'bg_color',
-        'border_color',
-        'button_color',
-        'button_text_color',
         'button_label',
         'is_active',
     ];

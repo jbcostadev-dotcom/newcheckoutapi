@@ -42,10 +42,6 @@ class OrderBumpController extends Controller
             'show_boleto' => 'boolean',
             'offer_title' => 'nullable|string|max:255',
             'offer_message' => 'nullable|string|max:2000',
-            'bg_color' => 'nullable|string|max:20',
-            'border_color' => 'nullable|string|max:20',
-            'button_color' => 'nullable|string|max:20',
-            'button_text_color' => 'nullable|string|max:20',
             'button_label' => 'nullable|string|max:100',
             'is_active' => 'boolean',
         ]);
@@ -89,10 +85,6 @@ class OrderBumpController extends Controller
             'show_boleto' => 'boolean',
             'offer_title' => 'sometimes|nullable|string|max:255',
             'offer_message' => 'sometimes|nullable|string|max:2000',
-            'bg_color' => 'sometimes|nullable|string|max:20',
-            'border_color' => 'sometimes|nullable|string|max:20',
-            'button_color' => 'sometimes|nullable|string|max:20',
-            'button_text_color' => 'sometimes|nullable|string|max:20',
             'button_label' => 'sometimes|nullable|string|max:100',
             'is_active' => 'boolean',
         ]);

@@ -22,6 +22,10 @@ class CheckoutController extends Controller
             'order_bump_display_mode' => 'stacked',
             'order_bump_scarcity_timer_enabled' => false,
             'order_bump_scarcity_timer_minutes' => 10,
+            'order_bump_bg_color' => '#FEFCE8',
+            'order_bump_border_color' => '#E2E8F0',
+            'order_bump_button_color' => '#13BF8C',
+            'order_bump_button_text_color' => '#FFFFFF',
             'button_text' => 'Finalizar Compra',
             'banner_message' => 'Digite aqui a mensagem',
             'header_store_name_visible' => true,
@@ -210,10 +214,11 @@ class CheckoutController extends Controller
                 'show_boleto' => (bool) $bump->show_boleto,
                 'offer_title' => $bump->offer_title,
                 'offer_message' => $bump->offer_message,
-                'bg_color' => $bump->bg_color,
-                'border_color' => $bump->border_color,
-                'button_color' => $bump->button_color,
-                'button_text_color' => $bump->button_text_color,
+                // The design is set once in the checkout settings for all Order Bumps.
+                'bg_color' => $settings->order_bump_bg_color ?? '#FEFCE8',
+                'border_color' => $settings->order_bump_border_color ?? '#E2E8F0',
+                'button_color' => $settings->order_bump_button_color ?? '#13BF8C',
+                'button_text_color' => $settings->order_bump_button_text_color ?? '#FFFFFF',
                 'button_label' => $bump->button_label,
                 'scarcity_timer_enabled' => (bool) ($settings->order_bump_scarcity_timer_enabled ?? false),
                 'scarcity_timer_minutes' => (int) ($settings->order_bump_scarcity_timer_minutes ?: 10),
@@ -221,6 +226,43 @@ class CheckoutController extends Controller
         }
 
         return $result;
+    }
+
+    /**
+     * Builds a representative Order Bump for the checkout editor, including
+     * stores that do not have an offer configured yet.
+     */
+    private function buildPreviewOrderBumps($settings): array
+    {
+        return [[
+            'id' => 0,
+            'name' => 'Order Bump de exemplo',
+            'product_id' => 0,
+            'product' => [
+                'id' => 0,
+                'name' => 'Produto adicional de exemplo',
+                'parent_title' => null,
+                'attributes' => null,
+                'image_url' => null,
+                'original_price' => 49.90,
+                'bump_price' => 29.90,
+            ],
+            'discount_type' => 'percent',
+            'discount_value' => 40,
+            'scope' => 'any',
+            'show_credit_card' => true,
+            'show_pix' => true,
+            'show_boleto' => true,
+            'offer_title' => 'Oferta especial para você',
+            'offer_message' => 'Adicione este item à sua compra com desconto exclusivo.',
+            'bg_color' => $settings->order_bump_bg_color ?? '#FEFCE8',
+            'border_color' => $settings->order_bump_border_color ?? '#E2E8F0',
+            'button_color' => $settings->order_bump_button_color ?? '#13BF8C',
+            'button_text_color' => $settings->order_bump_button_text_color ?? '#FFFFFF',
+            'button_label' => 'Quero essa oferta',
+            'scarcity_timer_enabled' => (bool) ($settings->order_bump_scarcity_timer_enabled ?? false),
+            'scarcity_timer_minutes' => (int) ($settings->order_bump_scarcity_timer_minutes ?: 10),
+        ]];
     }
 
     /**
@@ -529,7 +571,7 @@ class CheckoutController extends Controller
             'total' => 99.90,
             'preview' => true,
             'shipping_methods' => $shippingMethods,
-            'order_bumps' => $this->buildOrderBumps($store, [1, 2], $effectiveSettings),
+            'order_bumps' => $this->buildPreviewOrderBumps($effectiveSettings),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
