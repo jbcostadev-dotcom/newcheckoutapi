@@ -7,6 +7,7 @@ use App\Models\Store;
 use App\Services\CheckoutUrlGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -32,26 +33,56 @@ class ProductController extends Controller
     {
         $perPage = min(max($request->integer('per_page', 25), 1), 100);
         $search = trim(mb_substr((string) $request->query('search', ''), 0, 100));
-        $manualGroupExpression = "CASE WHEN shopify_product_id IS NULL OR shopify_product_id = '' THEN id ELSE NULL END";
 
-        $groupQuery = $store->products()
+        $applySearch = function ($query) use ($search) {
+            if ($search === '') {
+                return $query;
+            }
+
+            $like = '%'.addcslashes($search, '\\%_').'%';
+
+            return $query->where(function (Builder $query) use ($like) {
+                $query->where('name', 'like', $like)
+                    ->orWhere('parent_title', 'like', $like)
+                    ->orWhere('sku', 'like', $like)
+                    ->orWhere('barcode', 'like', $like)
+                    ->orWhere('attributes', 'like', $like);
+            });
+        };
+
+        // MySQL com ONLY_FULL_GROUP_BY nao aceita usar `id` dentro da expressao
+        // de agrupamento de produtos manuais. Separamos os dois formatos de
+        // grupo e os unimos antes de paginar.
+        $shopifyGroups = $applySearch(
+            $store->products()->getQuery()
+                ->whereNotNull('shopify_product_id')
+                ->where('shopify_product_id', '!=', '')
+        )
             ->select('shopify_product_id')
-            ->selectRaw("{$manualGroupExpression} AS manual_product_id")
+            ->selectRaw('NULL AS manual_product_id')
             ->selectRaw('MAX(id) AS representative_id')
             ->selectRaw('MAX(updated_at) AS latest_updated_at')
-            ->when($search !== '', function (Builder $query) use ($search) {
-                $like = '%'.addcslashes($search, '\\%_').'%';
+            ->groupBy('shopify_product_id');
 
-                $query->where(function (Builder $query) use ($like) {
-                    $query->where('name', 'like', $like)
-                        ->orWhere('parent_title', 'like', $like)
-                        ->orWhere('sku', 'like', $like)
-                        ->orWhere('barcode', 'like', $like)
-                        ->orWhere('attributes', 'like', $like);
-                });
+        $manualGroups = $applySearch(
+            $store->products()->getQuery()->where(function (Builder $query) {
+                $query->whereNull('shopify_product_id')
+                    ->orWhere('shopify_product_id', '');
             })
-            ->groupBy('shopify_product_id')
-            ->groupByRaw($manualGroupExpression)
+        )
+            ->selectRaw('NULL AS shopify_product_id')
+            ->selectRaw('id AS manual_product_id')
+            ->selectRaw('id AS representative_id')
+            ->selectRaw('updated_at AS latest_updated_at');
+
+        $groupQuery = DB::query()
+            ->fromSub($shopifyGroups->unionAll($manualGroups), 'catalog_groups')
+            ->select([
+                'shopify_product_id',
+                'manual_product_id',
+                'representative_id',
+                'latest_updated_at',
+            ])
             ->orderByDesc('latest_updated_at')
             ->orderByDesc('representative_id');
 
