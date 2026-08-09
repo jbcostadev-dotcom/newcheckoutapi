@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Services\CheckoutUrlGenerator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
@@ -16,7 +17,134 @@ class ProductController extends Controller
     {
         $store = $request->user()->stores()->findOrFail($storeId);
 
+        if ($request->query('view') === 'grouped') {
+            return $this->groupedIndex($request, $store);
+        }
+
         return response()->json($store->products);
+    }
+
+    /**
+     * Retorna uma pagina de produtos-pai com apenas os campos necessarios para
+     * a listagem. Variantes Shopify permanecem juntas na mesma pagina.
+     */
+    private function groupedIndex(Request $request, Store $store)
+    {
+        $perPage = min(max($request->integer('per_page', 25), 1), 100);
+        $search = trim(mb_substr((string) $request->query('search', ''), 0, 100));
+        $manualGroupExpression = "CASE WHEN shopify_product_id IS NULL OR shopify_product_id = '' THEN id ELSE NULL END";
+
+        $groupQuery = $store->products()
+            ->select('shopify_product_id')
+            ->selectRaw("{$manualGroupExpression} AS manual_product_id")
+            ->selectRaw('MAX(id) AS representative_id')
+            ->selectRaw('MAX(updated_at) AS latest_updated_at')
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $like = '%'.addcslashes($search, '\\%_').'%';
+
+                $query->where(function (Builder $query) use ($like) {
+                    $query->where('name', 'like', $like)
+                        ->orWhere('parent_title', 'like', $like)
+                        ->orWhere('sku', 'like', $like)
+                        ->orWhere('barcode', 'like', $like)
+                        ->orWhere('attributes', 'like', $like);
+                });
+            })
+            ->groupBy('shopify_product_id')
+            ->groupByRaw($manualGroupExpression)
+            ->orderByDesc('latest_updated_at')
+            ->orderByDesc('representative_id');
+
+        $groups = $groupQuery->paginate($perPage);
+        $groupRows = collect($groups->items());
+
+        $shopifyProductIds = $groupRows
+            ->pluck('shopify_product_id')
+            ->filter(fn ($id) => $id !== null && $id !== '')
+            ->map(fn ($id) => (string) $id)
+            ->values();
+        $manualProductIds = $groupRows
+            ->pluck('manual_product_id')
+            ->filter(fn ($id) => $id !== null)
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $products = collect();
+        if ($shopifyProductIds->isNotEmpty() || $manualProductIds->isNotEmpty()) {
+            $products = $store->products()
+                ->select([
+                    'id',
+                    'store_id',
+                    'shopify_product_id',
+                    'shopify_variant_id',
+                    'name',
+                    'parent_title',
+                    'attributes',
+                    'price',
+                    'compare_at_price',
+                    'stock_quantity',
+                    'image_url',
+                    'is_active',
+                ])
+                ->selectRaw("CASE WHEN shopify_product_id IS NULL OR shopify_product_id = '' THEN SUBSTR(description, 1, 180) ELSE NULL END AS description_excerpt")
+                ->where(function (Builder $query) use ($shopifyProductIds, $manualProductIds) {
+                    if ($shopifyProductIds->isNotEmpty()) {
+                        $query->whereIn('shopify_product_id', $shopifyProductIds);
+                    }
+
+                    if ($manualProductIds->isNotEmpty()) {
+                        $method = $shopifyProductIds->isNotEmpty() ? 'orWhereIn' : 'whereIn';
+                        $query->{$method}('id', $manualProductIds);
+                    }
+                })
+                ->orderBy('id')
+                ->get();
+        }
+
+        $manualProducts = $products->keyBy('id');
+        $shopifyProducts = $products
+            ->filter(fn ($product) => $product->shopify_product_id !== null && $product->shopify_product_id !== '')
+            ->groupBy(fn ($product) => (string) $product->shopify_product_id);
+
+        $data = $groupRows->map(function ($group) use ($manualProducts, $shopifyProducts) {
+            if ($group->manual_product_id !== null) {
+                $product = $manualProducts->get((int) $group->manual_product_id);
+
+                return $product ? [
+                    'kind' => 'plain',
+                    'group_key' => 'manual:'.$product->id,
+                    'product' => $product,
+                ] : null;
+            }
+
+            $shopifyProductId = (string) $group->shopify_product_id;
+            $variants = $shopifyProducts->get($shopifyProductId, collect())->values();
+            $representative = $variants->first();
+            $image = $variants->first(fn ($variant) => ! empty($variant->image_url))?->image_url;
+
+            if (! $representative) {
+                return null;
+            }
+
+            return [
+                'kind' => 'shopify',
+                'group_key' => 'shopify:'.$shopifyProductId,
+                'shopify_product_id' => $shopifyProductId,
+                'parent_title' => $representative->parent_title ?: $representative->name,
+                'image_url' => $image,
+                'variants' => $variants,
+            ];
+        })->filter()->values();
+
+        return response()->json([
+            'data' => $data,
+            'meta' => [
+                'current_page' => $groups->currentPage(),
+                'last_page' => $groups->lastPage(),
+                'per_page' => $groups->perPage(),
+                'total' => $groups->total(),
+            ],
+        ]);
     }
 
     /**
