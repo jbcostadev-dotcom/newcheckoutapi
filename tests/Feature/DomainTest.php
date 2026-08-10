@@ -190,9 +190,54 @@ class DomainTest extends TestCase
         ]);
         $this->assertNull($store->fresh()->custom_domain);
 
-        Http::assertSent(fn (Request $request) => $request->method() === 'PATCH'
-            && $request->url() === 'https://api.cloudflare.com/client/v4/zones/zone-test/custom_hostnames/cf-pending'
-            && $request['ssl']['method'] === 'http');
+        Http::assertSent(fn (Request $request) => $request->method() === 'GET'
+            && $request->url() === 'https://api.cloudflare.com/client/v4/zones/zone-test/custom_hostnames/cf-pending');
+    }
+
+    public function test_active_redeploying_hostname_is_available_for_checkout(): void
+    {
+        Http::fake([
+            'https://api.cloudflare.com/client/v4/zones/zone-test/custom_hostnames/cf-redeploying' => Http::response([
+                'success' => true,
+                'result' => [
+                    'id' => 'cf-redeploying',
+                    'hostname' => 'checkout.exemplo.com.br',
+                    'status' => 'active_redeploying',
+                    'ssl' => ['status' => 'active'],
+                ],
+            ]),
+        ]);
+
+        $user = User::factory()->create();
+        $store = Store::create([
+            'user_id' => $user->id,
+            'name' => 'Loja Teste',
+            'subdomain' => 'loja-redeploying',
+        ]);
+        $domain = $store->domains()->create([
+            'domain' => 'checkout.exemplo.com.br',
+            'status' => 'pending',
+            'ssl_status' => 'active',
+            'cloudflare_hostname_status' => 'pending',
+            'cloudflare_custom_hostname_id' => 'cf-redeploying',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/stores/{$store->id}/domains/{$domain->id}/verify-dns")
+            ->assertOk()
+            ->assertJsonPath('verified', true)
+            ->assertJsonPath('hostname_status', 'active_redeploying')
+            ->assertJsonPath('ssl_status', 'active');
+
+        $this->assertDatabaseHas('domains', [
+            'id' => $domain->id,
+            'status' => 'active',
+            'ssl_active' => true,
+        ]);
+        $this->assertDatabaseHas('stores', [
+            'id' => $store->id,
+            'custom_domain' => 'checkout.exemplo.com.br',
+        ]);
     }
 
     public function test_custom_domain_cannot_be_set_through_store_update(): void

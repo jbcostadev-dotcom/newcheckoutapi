@@ -118,9 +118,11 @@ class CloudflareCustomHostnameService
     {
         if (!$domain->cloudflare_custom_hostname_id) {
             $state = $this->provision($domain->domain);
-        } elseif (!$domain->ssl_active || $domain->status !== 'active') {
-            $state = $this->refreshValidation($domain->cloudflare_custom_hostname_id);
         } else {
+            // A sincronizacao recorrente deve apenas consultar o estado atual.
+            // Um PATCH reinicia a validacao/DCV e, quando executado a cada
+            // minuto pelo scheduler, pode manter o hostname indefinidamente
+            // em pending/active_redeploying.
             $state = $this->get($domain->cloudflare_custom_hostname_id);
         }
 
@@ -131,7 +133,9 @@ class CloudflareCustomHostnameService
     {
         $hostnameStatus = strtolower((string) ($state['status'] ?? 'pending'));
         $sslStatus = strtolower((string) data_get($state, 'ssl.status', 'pending'));
-        $isActive = $hostnameStatus === 'active' && $sslStatus === 'active';
+        $activeHostnameStatuses = ['active', 'active_redeploying'];
+        $isActive = in_array($hostnameStatus, $activeHostnameStatuses, true)
+            && $sslStatus === 'active';
         $terminalStatuses = [
             'blocked',
             'deleted',
