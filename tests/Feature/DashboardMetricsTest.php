@@ -24,10 +24,11 @@ class DashboardMetricsTest extends TestCase
             'subdomain' => 'loja-dashboard',
         ]);
 
-        $this->createOrder($store, 'paid', 100, '2026-08-11 09:00:00', 'pix');
-        $this->createOrder($store, 'paid', 250, '2026-08-10 16:00:00', 'credit_card');
+        $this->createOrder($store, 'paid', 100, '2026-08-11 09:00:00', 'pix', 'SP');
+        $this->createOrder($store, 'paid', 250, '2026-08-10 16:00:00', 'credit_card', 'RJ');
         $this->createOrder($store, 'pending', 80, '2026-08-11 10:00:00');
         $this->createOrder($store, 'failed', 60, '2026-08-09 18:00:00');
+        $this->createOrder($store, 'refused', 120, '2026-08-08 18:00:00', 'credit_card');
 
         $this->createFunnelSession($store, 'session-1', 'delivery', true);
         $this->createFunnelSession($store, 'session-2', 'personal_data');
@@ -42,9 +43,9 @@ class DashboardMetricsTest extends TestCase
             ->assertJsonPath('period', 'week')
             ->assertJsonPath('revenue_total', 350)
             ->assertJsonPath('orders_paid', 2)
-            ->assertJsonPath('orders_total', 4)
+            ->assertJsonPath('orders_total', 5)
             ->assertJsonPath('orders_pending', 1)
-            ->assertJsonPath('orders_failed', 1)
+            ->assertJsonPath('orders_failed', 2)
             ->assertJsonCount(7, 'sales_series')
             ->assertJsonPath('sales_series.5.label', '10/08')
             ->assertJsonPath('sales_series.5.value', 250)
@@ -59,7 +60,21 @@ class DashboardMetricsTest extends TestCase
             ->assertJsonPath('payment_methods.0.percentage', 50)
             ->assertJsonPath('payment_methods.1.method', 'pix')
             ->assertJsonPath('payment_methods.1.percentage', 50)
-            ->assertJsonPath('payment_methods.2.percentage', 0);
+            ->assertJsonPath('payment_methods.2.percentage', 0)
+            ->assertJsonPath('sales_by_state.0.state', 'RJ')
+            ->assertJsonPath('sales_by_state.0.sales', 1)
+            ->assertJsonPath('sales_by_state.0.revenue', 250)
+            ->assertJsonPath('sales_by_state.1.state', 'SP')
+            ->assertJsonPath('sales_by_state.1.sales', 1)
+            ->assertJsonPath('payment_conversions.0.method', 'credit_card')
+            ->assertJsonPath('payment_conversions.0.approved', 1)
+            ->assertJsonPath('payment_conversions.0.refused', 1)
+            ->assertJsonPath('payment_conversions.0.conversion', 50)
+            ->assertJsonPath('payment_conversions.1.method', 'pix')
+            ->assertJsonPath('payment_conversions.1.generated', 3)
+            ->assertJsonPath('payment_conversions.1.approved', 1)
+            ->assertJsonPath('payment_conversions.1.conversion', 33.3)
+            ->assertJsonPath('payment_conversions.2.conversion', 0);
 
         Carbon::setTestNow();
     }
@@ -70,6 +85,7 @@ class DashboardMetricsTest extends TestCase
         float $amount,
         string $createdAt,
         string $paymentMethod = 'pix',
+        ?string $shippingUf = null,
     ): void
     {
         $order = $store->orders()->create([
@@ -78,6 +94,7 @@ class DashboardMetricsTest extends TestCase
             'amount' => $amount,
             'payment_method' => $paymentMethod,
             'status' => $status,
+            'shipping_uf' => $shippingUf,
         ]);
 
         $order->forceFill([

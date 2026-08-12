@@ -102,6 +102,59 @@ class OrderController extends Controller
             ];
         })->all();
 
+        $salesByState = (clone $periodOrders)
+            ->where('status', Order::STATUS_PAID)
+            ->whereNotNull('shipping_uf')
+            ->where('shipping_uf', '<>', '')
+            ->selectRaw('UPPER(shipping_uf) as state')
+            ->selectRaw('COUNT(*) as sales')
+            ->selectRaw('SUM(amount) as revenue')
+            ->groupByRaw('UPPER(shipping_uf)')
+            ->orderByDesc('sales')
+            ->orderByDesc('revenue')
+            ->get()
+            ->map(fn ($row) => [
+                'state' => $row->state,
+                'sales' => (int) $row->sales,
+                'revenue' => round((float) $row->revenue, 2),
+            ])
+            ->values()
+            ->all();
+
+        $paymentStatusCounts = (clone $periodOrders)
+            ->whereIn('payment_method', ['credit_card', 'pix', 'boleto'])
+            ->select('payment_method', 'status')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('payment_method', 'status')
+            ->get();
+
+        $paymentConversions = collect([
+            ['method' => 'credit_card', 'label' => 'Cartão', 'basis' => 'decided'],
+            ['method' => 'pix', 'label' => 'Pix', 'basis' => 'generated'],
+            ['method' => 'boleto', 'label' => 'Boleto', 'basis' => 'generated'],
+        ])->map(function (array $method) use ($paymentStatusCounts) {
+            $rows = $paymentStatusCounts->where('payment_method', $method['method']);
+            $approved = (int) $rows
+                ->where('status', Order::STATUS_PAID)
+                ->sum('total');
+            $refused = (int) $rows
+                ->whereIn('status', [Order::STATUS_REFUSED, Order::STATUS_FAILED])
+                ->sum('total');
+            $generated = $method['basis'] === 'decided'
+                ? $approved + $refused
+                : (int) $rows->sum('total');
+
+            return [
+                ...$method,
+                'approved' => $approved,
+                'generated' => $generated,
+                'refused' => $refused,
+                'conversion' => $generated > 0
+                    ? round(($approved / $generated) * 100, 1)
+                    : 0,
+            ];
+        })->all();
+
         // Últimos 5 pedidos para o dashboard
         $recentOrders = $store->orders()
             ->with('items.product:id,name,image_url,price')
@@ -142,6 +195,8 @@ class OrderController extends Controller
                 ],
             ],
             'payment_methods' => $paymentMethods,
+            'sales_by_state' => $salesByState,
+            'payment_conversions' => $paymentConversions,
             'sales_series' => array_values($series),
             'recent_orders' => $recentOrders,
         ]);
