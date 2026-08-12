@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\CheckoutFunnelSession;
 use App\Models\Store;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -99,6 +100,16 @@ class LiveCheckoutController extends Controller
         // atualização parcial (ex.: apenas a etapa ou forma de pagamento).
         $existing = Cache::get($sessionKey, []);
         $session = array_merge($existing, $session);
+
+        // Persiste somente a entrada e as mudancas de etapa. O heartbeat
+        // continua no cache e nao gera uma escrita no banco a cada 3s.
+        if (($existing['step'] ?? null) !== $validated['step']) {
+            CheckoutFunnelSession::recordStage(
+                $store->id,
+                $validated['session_id'],
+                $validated['step'],
+            );
+        }
 
         // Campos que devem ser atualizados mesmo quando vierem vazios/null.
         $session['step'] = $validated['step'];

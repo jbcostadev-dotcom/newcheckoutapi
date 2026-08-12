@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\AbandonedCart;
+use App\Models\CheckoutFunnelSession;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\ShippingMethod;
@@ -30,6 +31,7 @@ class AbandonedCartController extends Controller
         $validated = $request->validate([
             'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
             'domain' => 'nullable|string|required_without:store_id',
+            'session_id' => 'nullable|string|max:64',
             'step_reached' => 'required|in:dados,entrega,pagamento,pagamento_tentado',
             'customer_name' => 'required|string|max:150',
             'customer_email' => 'required|email|max:150',
@@ -75,7 +77,16 @@ class AbandonedCartController extends Controller
         $customer = $store->customers()->where('email', $email)->first();
 
         // Busca carrinho em aberto para este e-mail + loja.
-        $cart = AbandonedCart::forStore($store->id)
+        $cart = null;
+        if (! empty($validated['session_id'])) {
+            $cart = AbandonedCart::forStore($store->id)
+                ->where('session_id', $validated['session_id'])
+                ->whereIn('status', [AbandonedCart::STATUS_OPEN, AbandonedCart::STATUS_EXPIRED])
+                ->latest()
+                ->first();
+        }
+
+        $cart ??= AbandonedCart::forStore($store->id)
             ->byEmail($email)
             ->whereIn('status', [AbandonedCart::STATUS_OPEN, AbandonedCart::STATUS_EXPIRED])
             ->latest()
@@ -117,6 +128,10 @@ class AbandonedCartController extends Controller
             'utm_campaign' => $validated['utm_campaign'] ?? null,
             'device_type' => $validated['device_type'] ?? $this->guessDeviceType($request->userAgent()),
         ];
+
+        if (! empty($validated['session_id'])) {
+            $common['session_id'] = $validated['session_id'];
+        }
 
         // Etapa atingida.
         $stepReached = $validated['step_reached'];
@@ -376,6 +391,13 @@ class AbandonedCartController extends Controller
             'recovered_at' => $cart->recovered_at ?? now(),
             'last_activity_at' => now(),
         ]);
+
+        if ($cart->session_id) {
+            CheckoutFunnelSession::markApproved(
+                (int) $order->store_id,
+                $cart->session_id,
+            );
+        }
     }
 
     /**

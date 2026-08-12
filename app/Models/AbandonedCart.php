@@ -37,6 +37,7 @@ class AbandonedCart extends Model
 
     protected $fillable = [
         'store_id',
+        'session_id',
         'customer_id',
         'order_id',
         'customer_name',

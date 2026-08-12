@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\CheckoutFunnelSession;
 use App\Models\Order;
 use App\Services\ShopifyOrderSync;
 use App\Services\UtmifyService;
@@ -58,6 +59,49 @@ class OrderController extends Controller
             ? round(($ordersPaid / $ordersTotal) * 100, 1)
             : 0;
 
+        $funnelSessions = CheckoutFunnelSession::query()
+            ->where('store_id', $store->id)
+            ->whereBetween('created_at', [$periodStart, $now]);
+        $funnelEntered = (clone $funnelSessions)->count();
+        $funnelPersonalData = (clone $funnelSessions)
+            ->whereIn('furthest_stage', [
+                CheckoutFunnelSession::STAGE_PERSONAL_DATA,
+                CheckoutFunnelSession::STAGE_DELIVERY,
+            ])
+            ->count();
+        $funnelDelivery = (clone $funnelSessions)
+            ->where('furthest_stage', CheckoutFunnelSession::STAGE_DELIVERY)
+            ->count();
+        $funnelApproved = (clone $funnelSessions)
+            ->where('payment_approved', true)
+            ->count();
+        $funnelConversion = $funnelEntered > 0
+            ? round(($funnelApproved / $funnelEntered) * 100, 1)
+            : 0;
+
+        $approvedByMethod = (clone $periodOrders)
+            ->where('status', Order::STATUS_PAID)
+            ->select('payment_method')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('payment_method')
+            ->pluck('total', 'payment_method');
+        $approvedPaymentsTotal = (int) $approvedByMethod->sum();
+        $paymentMethods = collect([
+            ['method' => 'credit_card', 'label' => 'Cartão'],
+            ['method' => 'pix', 'label' => 'Pix'],
+            ['method' => 'boleto', 'label' => 'Boleto'],
+        ])->map(function (array $method) use ($approvedByMethod, $approvedPaymentsTotal) {
+            $count = (int) ($approvedByMethod[$method['method']] ?? 0);
+
+            return [
+                ...$method,
+                'count' => $count,
+                'percentage' => $approvedPaymentsTotal > 0
+                    ? round(($count / $approvedPaymentsTotal) * 100, 1)
+                    : 0,
+            ];
+        })->all();
+
         // Últimos 5 pedidos para o dashboard
         $recentOrders = $store->orders()
             ->with('items.product:id,name,image_url,price')
@@ -88,6 +132,16 @@ class OrderController extends Controller
             'orders_pending' => $ordersPending,
             'orders_failed' => $ordersFailed,
             'conversion' => $conversion,
+            'checkout_funnel' => [
+                'conversion' => $funnelConversion,
+                'stages' => [
+                    ['key' => 'entered', 'label' => 'Entraram', 'count' => $funnelEntered],
+                    ['key' => 'personal_data', 'label' => 'Dados pessoais', 'count' => $funnelPersonalData],
+                    ['key' => 'delivery', 'label' => 'Entrega', 'count' => $funnelDelivery],
+                    ['key' => 'approved', 'label' => 'Aprovados', 'count' => $funnelApproved],
+                ],
+            ],
+            'payment_methods' => $paymentMethods,
             'sales_series' => array_values($series),
             'recent_orders' => $recentOrders,
         ]);
