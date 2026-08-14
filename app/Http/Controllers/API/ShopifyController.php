@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Jobs\SyncShopifyProducts;
+use App\Jobs\SyncShopifyCollections;
 use App\Jobs\InjectShopifyCheckout;
 
 class ShopifyController extends Controller
@@ -59,7 +60,7 @@ class ShopifyController extends Controller
     }
 
     /**
-     * Disparar sincronização de produtos do Shopify.
+     * Disparar sincronização do catálogo do Shopify.
      */
     public function sync(Request $request, string $storeId)
     {
@@ -70,9 +71,10 @@ class ShopifyController extends Controller
         }
 
         SyncShopifyProducts::dispatch($store);
+        SyncShopifyCollections::dispatch($store);
 
         return response()->json([
-            'message' => 'Sincronização de produtos iniciada com sucesso.',
+            'message' => 'Sincronização de produtos e coleções iniciada com sucesso.',
         ]);
     }
 
@@ -295,6 +297,7 @@ class ShopifyController extends Controller
             ]);
 
             SyncShopifyProducts::dispatch($store);
+            SyncShopifyCollections::dispatch($store);
             // Injeta o snippet no tema publicado em paralelo (best-effort).
             InjectShopifyCheckout::dispatch($store);
 

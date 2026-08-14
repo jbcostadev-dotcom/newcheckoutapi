@@ -40,7 +40,8 @@ class SyncShopifyProducts implements ShouldQueue
             'X-Shopify-Access-Token' => $this->store->shopify_access_token,
         ];
 
-        $baseEndpoint = "https://{$this->store->shopify_domain}/admin/api/2025-07/products.json";
+        $apiVersion = (string) config('services.shopify.api_version', '2026-07');
+        $baseEndpoint = "https://{$this->store->shopify_domain}/admin/api/{$apiVersion}/products.json";
 
         // Paginação Shopify Admin API (até 250 por página).
         $seenVariantIds = [];

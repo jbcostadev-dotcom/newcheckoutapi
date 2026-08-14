@@ -33,7 +33,7 @@ class ShopifyThemeInjector
     public function __construct()
     {
         // Versão estável da Admin API. Mantida em config p/ atualizar de um lugar.
-        $this->apiVersion = (string) config('services.shopify.api_version', '2025-07');
+        $this->apiVersion = (string) config('services.shopify.api_version', '2026-07');
     }
 
     /**

@@ -30,6 +30,7 @@ use App\Http\Controllers\API\PaymentController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\ShopifyController;
+use App\Http\Controllers\API\ShopifyCollectionController;
 use App\Http\Controllers\API\SmtpSettingController;
 use App\Http\Controllers\API\SocialProofController;
 use App\Http\Controllers\API\StoreController;
@@ -139,6 +140,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('stores/{store}/shopify/status', [ShopifyController::class, 'status']);
     Route::put('stores/{store}/shopify/credentials', [ShopifyController::class, 'updateCredentials']);
     Route::post('stores/{store}/shopify/sync', [ShopifyController::class, 'sync']);
+    Route::get('stores/{store}/shopify/collections', [ShopifyCollectionController::class, 'index']);
     Route::delete('stores/{store}/shopify', [ShopifyController::class, 'disconnect']);
 
     // Utmify (credencial de API de rastreamento por loja)

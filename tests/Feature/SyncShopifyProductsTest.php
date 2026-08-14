@@ -31,10 +31,10 @@ class SyncShopifyProductsTest extends TestCase
     {
         $store = $this->createStore();
 
-        $nextUrl = 'https://loja-teste.myshopify.com/admin/api/2025-07/products.json?page_info=abc123&limit=250';
+        $nextUrl = 'https://loja-teste.myshopify.com/admin/api/2026-07/products.json?page_info=abc123&limit=250';
 
         Http::fake([
-            'https://loja-teste.myshopify.com/admin/api/2025-07/products.json*' => Http::sequence()
+            'https://loja-teste.myshopify.com/admin/api/2026-07/products.json*' => Http::sequence()
                 ->push([
                     'products' => [
                         $this->productPayload(1, 'Produto A', [1]),
@@ -64,7 +64,7 @@ class SyncShopifyProductsTest extends TestCase
         $store = $this->createStore();
 
         Http::fake([
-            'https://loja-teste.myshopify.com/admin/api/2025-07/products.json*' => Http::response([
+            'https://loja-teste.myshopify.com/admin/api/2026-07/products.json*' => Http::response([
                 'products' => [
                     $this->productPayload(1, 'Produto Grande', [1], str_repeat('x', 2_000_000)),
                 ],
@@ -90,7 +90,7 @@ class SyncShopifyProductsTest extends TestCase
         ]);
 
         Http::fake([
-            'https://loja-teste.myshopify.com/admin/api/2025-07/products.json*' => Http::response([
+            'https://loja-teste.myshopify.com/admin/api/2026-07/products.json*' => Http::response([
                 'products' => [
                     $this->productPayload(1, 'Novo', [1]),
                 ],
@@ -108,7 +108,7 @@ class SyncShopifyProductsTest extends TestCase
         $store = $this->createStore();
 
         Http::fake([
-            'https://loja-teste.myshopify.com/admin/api/2025-07/products.json*' => Http::response([
+            'https://loja-teste.myshopify.com/admin/api/2026-07/products.json*' => Http::response([
                 'products' => [
                     $this->productPayload(1, 'Produto A', [1], null, [
                         'sku' => 'SKU-001',

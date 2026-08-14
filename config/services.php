@@ -43,7 +43,7 @@ return [
         'scopes' => env('SHOPIFY_SCOPES', 'read_products,read_orders,write_orders,write_themes,read_customers,write_customers'),
         'redirect_uri' => rtrim(env('APP_URL', 'https://'.env('API_DOMAIN', 'api.bersenker.shop')), '/').'/api/shopify/callback',
         // Versão da Admin API REST usada nas chamadas de tema/assets.
-        'api_version' => env('SHOPIFY_API_VERSION', '2025-07'),
+        'api_version' => env('SHOPIFY_API_VERSION', '2026-07'),
         // URL base exposta ao snippet injetado no tema (pública). Default = APP_URL.
         'public_api_base' => env('SHOPIFY_PUBLIC_API_BASE', env('APP_URL')),
         // URL do painel (frontend) para onde o callback Shopify redireciona o lojista.

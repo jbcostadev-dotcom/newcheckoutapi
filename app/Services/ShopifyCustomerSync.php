@@ -22,7 +22,7 @@ class ShopifyCustomerSync
 
     public function __construct()
     {
-        $this->apiVersion = (string) config('services.shopify.api_version', '2025-07');
+        $this->apiVersion = (string) config('services.shopify.api_version', '2026-07');
     }
 
     /**

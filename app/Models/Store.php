@@ -44,6 +44,11 @@ class Store extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function shopifyCollections()
+    {
+        return $this->hasMany(ShopifyCollection::class);
+    }
+
     public function orders()
     {
         return $this->hasMany(Order::class);
