@@ -43,6 +43,7 @@ class CheckoutController extends Controller
             'summary_total_text_color' => '#00A37C',
             'summary_default_expanded' => true,
             'summary_show_discount' => true,
+            'summary_show_installments' => true,
             'summary_coupon_enabled' => true,
             'quantity_selector_enabled' => true,
             'step_title_font_size' => '1.25rem',
