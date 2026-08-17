@@ -66,4 +66,32 @@ class UnipayServiceCardPayloadTest extends TestCase
         $this->assertSame(2026, $payload['card']['expirationYear']);
         $this->assertSame('123', $payload['card']['cvv']);
     }
+
+    public function test_company_payload_uses_cnpj_contract_and_legal_metadata(): void
+    {
+        $order = new Order([
+            'id' => 456,
+            'customer_name' => 'Empresa Exemplo Ltda',
+            'customer_email' => 'financeiro@empresa.test',
+            'customer_phone' => '11999999999',
+            'customer_document' => '11.222.333/0001-81',
+            'customer_type' => 'company',
+            'customer_state_registration' => '123.456.789.000',
+            'customer_state_registration_exempt' => false,
+            'amount' => 149.90,
+        ]);
+        $order->setRelation('items', new Collection());
+
+        $payload = UnipayService::buildPixPayload(
+            $order,
+            'https://example.com/webhook'
+        );
+
+        $this->assertSame('11222333000181', $payload['customer']['document']['number']);
+        $this->assertSame('CNPJ', $payload['customer']['document']['type']);
+        $this->assertSame('Empresa Exemplo Ltda', $payload['customer']['name']);
+        $this->assertSame('PJ', $payload['metadata']['customer_type']);
+        $this->assertSame('123.456.789.000', $payload['metadata']['state_registration']);
+        $this->assertFalse($payload['metadata']['state_registration_exempt']);
+    }
 }

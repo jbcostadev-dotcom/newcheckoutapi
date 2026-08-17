@@ -12,6 +12,9 @@ class Customer extends Model
         'email',
         'phone',
         'document',
+        'person_type',
+        'state_registration',
+        'state_registration_exempt',
         'zip',
         'street',
         'number',
@@ -20,6 +23,10 @@ class Customer extends Model
         'city',
         'uf',
         'shopify_customer_id',
+    ];
+
+    protected $casts = [
+        'state_registration_exempt' => 'boolean',
     ];
 
     public function store()

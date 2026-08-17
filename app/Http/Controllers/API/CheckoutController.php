@@ -64,6 +64,8 @@ class CheckoutController extends Controller
             'font_family' => 'Inter',
             'font_size_base' => '16px',
             'social_proofs_enabled' => true,
+            'accept_cpf' => true,
+            'accept_cnpj' => false,
             'pix_enabled' => true,
             'card_enabled' => true,
             'boleto_enabled' => false,

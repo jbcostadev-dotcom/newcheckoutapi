@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\UnipayException;
 use App\Models\Gateway;
 use App\Models\Order;
+use App\Support\BrazilianDocument;
 use Illuminate\Support\Facades\Http;
 
 class UnipayService
@@ -148,8 +149,27 @@ class UnipayService
         $customerName = $order->customer_name;
         $customerEmail = $order->customer_email;
         $customerPhone = $order->customer_phone;
-        $document = $order->customer_document;
-        $documentType = self::guessDocumentType($document);
+        $document = BrazilianDocument::digits($order->customer_document);
+        $documentType = match ($order->customer_type) {
+            'company' => BrazilianDocument::CNPJ,
+            'individual' => BrazilianDocument::CPF,
+            default => BrazilianDocument::type($document),
+        };
+
+        // FastSoft create-transaction contract:
+        // https://developers.fastsoftbrasil.com/docs/intro/getting-started
+        // customer.document.number is unformatted and type is CPF or CNPJ.
+        $metadata = [
+            'order_id' => (string) $order->id,
+            'customer_type' => $documentType === BrazilianDocument::CNPJ ? 'PJ' : 'PF',
+        ];
+
+        if ($documentType === BrazilianDocument::CNPJ) {
+            if (! empty($order->customer_state_registration)) {
+                $metadata['state_registration'] = $order->customer_state_registration;
+            }
+            $metadata['state_registration_exempt'] = (bool) $order->customer_state_registration_exempt;
+        }
 
         $shipping = [
             'fee' => $order->shipping_price ? (int) round((float) $order->shipping_price * 100) : 0,
@@ -192,9 +212,7 @@ class UnipayService
             'traceable' => true,
             'ip' => $ip,
             'postbackUrl' => $postbackUrl,
-            'metadata' => [
-                'order_id' => (string) $order->id,
-            ],
+            'metadata' => $metadata,
         ];
     }
 
@@ -253,20 +271,4 @@ class UnipayService
         ]);
     }
 
-    /**
-     * Adivinha o tipo de documento (CPF/CNPJ) pelo tamanho.
-     */
-    protected static function guessDocumentType(?string $document): ?string
-    {
-        if (!$document) {
-            return null;
-        }
-        $digits = preg_replace('/\D/', '', $document);
-
-        if (strlen($digits) <= 11) {
-            return 'CPF';
-        }
-
-        return 'CNPJ';
-    }
 }

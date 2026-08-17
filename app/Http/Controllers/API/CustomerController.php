@@ -7,7 +7,9 @@ use App\Models\Customer;
 use App\Models\Order;
 use App\Models\Store;
 use App\Services\ShopifyCustomerSync;
+use App\Support\BrazilianDocument;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class CustomerController extends Controller
 {
@@ -19,13 +21,22 @@ class CustomerController extends Controller
      */
     public function register(Request $request, ShopifyCustomerSync $sync)
     {
+        if ($request->filled('document')) {
+            $request->merge([
+                'document' => BrazilianDocument::digits((string) $request->input('document')),
+            ]);
+        }
+
         $validated = $request->validate([
             'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
             'domain' => 'nullable|string|required_without:store_id',
             'name' => 'required|string|min:3|max:150',
             'email' => 'required|email|max:150',
             'phone' => 'required|string|min:10|max:20',
-            'document' => 'nullable|string|max:20',
+            'document' => ['nullable', 'string', 'regex:/^(\d{11}|\d{14})$/'],
+            'person_type' => 'nullable|string|in:individual,company',
+            'state_registration' => 'nullable|string|max:30',
+            'state_registration_exempt' => 'nullable|boolean',
             'address' => 'nullable|array',
             'address.cep' => 'nullable|string|max:9',
             'address.logradouro' => 'nullable|string|max:255',
@@ -41,6 +52,35 @@ class CustomerController extends Controller
 
         if (!$store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
+        }
+
+        if (! empty($validated['document'])) {
+            if (! BrazilianDocument::isValid($validated['document'])) {
+                throw ValidationException::withMessages([
+                    'document' => ['Informe um CPF ou CNPJ válido.'],
+                ]);
+            }
+
+            $documentType = BrazilianDocument::type($validated['document']);
+            $personType = $documentType === BrazilianDocument::CNPJ ? 'company' : 'individual';
+            $settings = $store->checkoutSettings;
+            $isAccepted = $documentType === BrazilianDocument::CPF
+                ? (bool) ($settings?->accept_cpf ?? true)
+                : (bool) ($settings?->accept_cnpj ?? false);
+
+            if (! $isAccepted) {
+                throw ValidationException::withMessages([
+                    'document' => ["Pagamentos com {$documentType} não estão habilitados nesta loja."],
+                ]);
+            }
+
+            if (! empty($validated['person_type']) && $validated['person_type'] !== $personType) {
+                throw ValidationException::withMessages([
+                    'person_type' => ['O tipo de pessoa não corresponde ao documento informado.'],
+                ]);
+            }
+
+            $validated['person_type'] = $personType;
         }
 
         $customer = $this->upsertCustomer($store, $validated);
@@ -206,6 +246,13 @@ class CustomerController extends Controller
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?? null,
             'document' => $validated['document'] ?? null,
+            'person_type' => $validated['person_type'] ?? 'individual',
+            'state_registration' => ($validated['person_type'] ?? 'individual') === 'company'
+                ? ($validated['state_registration'] ?? null)
+                : null,
+            'state_registration_exempt' => ($validated['person_type'] ?? 'individual') === 'company'
+                ? (bool) ($validated['state_registration_exempt'] ?? false)
+                : false,
         ];
 
         if (!empty($validated['address']) && !empty($validated['address']['cep'])) {

@@ -159,7 +159,14 @@ class ShopifyCustomerSync
         }
 
         if ($customer->document) {
-            $payload['note'] = 'CPF/CNPJ: ' . $customer->document;
+            $note = ($customer->person_type === 'company' ? 'CNPJ: ' : 'CPF: ') . $customer->document;
+            if ($customer->person_type === 'company') {
+                $stateRegistration = $customer->state_registration_exempt
+                    ? 'Isento'
+                    : ($customer->state_registration ?: 'Não informada');
+                $note .= "\nInscrição Estadual: {$stateRegistration}";
+            }
+            $payload['note'] = $note;
         }
 
         // Endereço default — atualiza quando já houver dados completos.

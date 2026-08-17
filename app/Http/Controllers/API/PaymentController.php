@@ -19,6 +19,7 @@ use App\Services\MetaConversionsApiService;
 use App\Services\TikTokEventsApiService;
 use App\Services\KwaiEventsApiService;
 use App\Services\TaboolaPostbackService;
+use App\Support\BrazilianDocument;
 use App\Models\WhatsappTemplate;
 use App\Services\WhatsAppEventService;
 use App\Models\EmailTemplate;
@@ -28,6 +29,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class PaymentController extends Controller
 {
@@ -44,6 +46,12 @@ class PaymentController extends Controller
      */
     public function process(Request $request)
     {
+        if ($request->filled('customer_document')) {
+            $request->merge([
+                'customer_document' => BrazilianDocument::digits((string) $request->input('customer_document')),
+            ]);
+        }
+
         $validated = $request->validate([
             'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
             'domain' => 'nullable|string|required_without:store_id',
@@ -52,7 +60,10 @@ class PaymentController extends Controller
             'items.*.qty' => 'nullable|integer|min:1',
             'customer_name' => 'required|string',
             'customer_email' => 'required|email',
-            'customer_document' => 'required|string|min:11|max:14',
+            'customer_document' => ['required', 'string', 'regex:/^(\d{11}|\d{14})$/'],
+            'customer_type' => 'nullable|string|in:individual,company',
+            'customer_state_registration' => 'nullable|string|max:30',
+            'customer_state_registration_exempt' => 'nullable|boolean',
             'customer_phone' => 'required|string|min:10|max:20',
             'payment_method' => 'required|in:pix,credit_card,boleto',
             'card_number' => 'required_if:payment_method,credit_card|string|min:13|max:19',
@@ -119,6 +130,36 @@ class PaymentController extends Controller
         // Resolve the correct gateway based on the payment method configured in checkout settings.
         $settings = $store->checkoutSettings;
         $paymentMethod = $validated['payment_method'];
+
+        if (! BrazilianDocument::isValid($validated['customer_document'])) {
+            throw ValidationException::withMessages([
+                'customer_document' => ['Informe um CPF ou CNPJ válido.'],
+            ]);
+        }
+
+        $documentType = BrazilianDocument::type($validated['customer_document']);
+        $customerType = $documentType === BrazilianDocument::CNPJ ? 'company' : 'individual';
+        $documentAccepted = $documentType === BrazilianDocument::CPF
+            ? (bool) ($settings?->accept_cpf ?? true)
+            : (bool) ($settings?->accept_cnpj ?? false);
+
+        if (! $documentAccepted) {
+            throw ValidationException::withMessages([
+                'customer_document' => ["Pagamentos com {$documentType} não estão habilitados nesta loja."],
+            ]);
+        }
+
+        if (! empty($validated['customer_type']) && $validated['customer_type'] !== $customerType) {
+            throw ValidationException::withMessages([
+                'customer_type' => ['O tipo de pessoa não corresponde ao documento informado.'],
+            ]);
+        }
+
+        $validated['customer_type'] = $customerType;
+        if ($customerType === 'individual') {
+            $validated['customer_state_registration'] = null;
+            $validated['customer_state_registration_exempt'] = false;
+        }
 
         // Validate that the payment method is enabled.
         $methodEnabledMap = [
@@ -376,6 +417,9 @@ class PaymentController extends Controller
                     'email' => $validated['customer_email'],
                     'phone' => $validated['customer_phone'] ?? null,
                     'document' => $validated['customer_document'] ?? null,
+                    'person_type' => $validated['customer_type'],
+                    'state_registration' => $validated['customer_state_registration'] ?? null,
+                    'state_registration_exempt' => (bool) ($validated['customer_state_registration_exempt'] ?? false),
                     'zip' => $ship['cep'] ?? null,
                     'street' => $ship['logradouro'] ?? null,
                     'number' => $ship['numero'] ?? null,
@@ -385,13 +429,14 @@ class PaymentController extends Controller
                     'uf' => $ship['uf'] ?? null,
                 ]);
             } else {
-                // Atualiza campos em branco preservando dados já preenchidos.
+                // Atualiza os dados cadastrais; o endereço existente só é preenchido quando estiver vazio.
                 $update = [];
-                foreach (['phone' => 'customer_phone', 'document' => 'customer_document'] as $field => $key) {
-                    if (empty($customer->{$field}) && ! empty($validated[$key])) {
-                        $update[$field] = $validated[$key];
-                    }
-                }
+                $update['name'] = $validated['customer_name'];
+                $update['phone'] = $validated['customer_phone'] ?? null;
+                $update['document'] = $validated['customer_document'];
+                $update['person_type'] = $validated['customer_type'];
+                $update['state_registration'] = $validated['customer_state_registration'] ?? null;
+                $update['state_registration_exempt'] = (bool) ($validated['customer_state_registration_exempt'] ?? false);
                 if (! empty($ship['cep']) && empty($customer->zip)) {
                     $update['zip'] = $ship['cep'] ?? null;
                     $update['street'] = $ship['logradouro'] ?? null;
@@ -412,6 +457,9 @@ class PaymentController extends Controller
                 'customer_name' => $validated['customer_name'],
                 'customer_email' => $validated['customer_email'],
                 'customer_document' => $validated['customer_document'] ?? null,
+                'customer_type' => $validated['customer_type'],
+                'customer_state_registration' => $validated['customer_state_registration'] ?? null,
+                'customer_state_registration_exempt' => (bool) ($validated['customer_state_registration_exempt'] ?? false),
                 'customer_phone' => $validated['customer_phone'] ?? null,
                 'amount' => $finalTotal,
                 'payment_method' => $validated['payment_method'],

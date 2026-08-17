@@ -139,6 +139,8 @@ class CheckoutSettingController extends Controller
                 'font_family' => 'nullable|string|max:50',
                 'font_size_base' => 'nullable|string|max:10',
                 'social_proofs_enabled' => 'boolean',
+                'accept_cpf' => 'boolean',
+                'accept_cnpj' => 'boolean',
                 'pix_enabled' => 'boolean',
                 'pix_gateway_id' => 'nullable|integer|exists:gateways,id',
                 'pix_gateway_ids' => 'nullable|array',
@@ -168,6 +170,19 @@ class CheckoutSettingController extends Controller
                 'errors' => $e->errors(),
             ]);
             throw $e;
+        }
+
+        $acceptCpf = array_key_exists('accept_cpf', $validated)
+            ? (bool) $validated['accept_cpf']
+            : (bool) ($settings->accept_cpf ?? true);
+        $acceptCnpj = array_key_exists('accept_cnpj', $validated)
+            ? (bool) $validated['accept_cnpj']
+            : (bool) ($settings->accept_cnpj ?? false);
+
+        if (! $acceptCpf && ! $acceptCnpj) {
+            throw ValidationException::withMessages([
+                'accept_cpf' => ['Mantenha CPF ou CNPJ habilitado para processar pagamentos.'],
+            ]);
         }
 
         // Process image uploads and overwrite the corresponding *_url fields.

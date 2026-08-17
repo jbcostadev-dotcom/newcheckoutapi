@@ -30,6 +30,20 @@ php artisan jcheckout:make-super-admin admin@admin.com
 O comando pede confirmação. O painel permite publicar metas e enviar somente
 PNG, JPEG ou WebP de até 5 MB; alterações ficam registradas em `admin_audit_logs`.
 
+## Integração FastSoft: CPF e CNPJ
+
+O checkout segue o contrato de criação de transações da
+[documentação oficial da FastSoft](https://developers.fastsoftbrasil.com/docs/intro/getting-started):
+
+- `customer.document.number` é enviado somente com dígitos;
+- `customer.document.type` é enviado como `CPF` ou `CNPJ`;
+- para pessoa jurídica, a razão social é enviada em `customer.name`;
+- tipo de pessoa e inscrição estadual seguem em `metadata` para conciliação.
+
+As preferências `accept_cpf` e `accept_cnpj` ficam em `checkout_settings`. O
+padrão é CPF habilitado e CNPJ desabilitado, e pelo menos um tipo precisa
+permanecer ativo.
+
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
 - [Simple, fast routing engine](https://laravel.com/docs/routing).

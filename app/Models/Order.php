@@ -32,7 +32,9 @@ class Order extends Model
 
     protected $fillable = [
         'store_id', 'gateway_id', 'customer_id', 'customer_name', 'customer_email',
-        'customer_phone', 'customer_document', 'amount', 'payment_method',
+        'customer_phone', 'customer_document', 'customer_type',
+        'customer_state_registration', 'customer_state_registration_exempt',
+        'amount', 'payment_method',
         'status', 'gateway_transaction_id', 'shopify_order_id', 'pix_qrcode', 'pix_copia_cola',
         'card_brand', 'card_last4', 'card_token', 'installments',
         'boleto_url', 'boleto_barcode', 'boleto_digitable_line', 'gateway_expires_at',
@@ -48,6 +50,7 @@ class Order extends Model
         'upsell_amount' => 'decimal:2',
         'shipping_price' => 'decimal:2',
         'installments' => 'integer',
+        'customer_state_registration_exempt' => 'boolean',
         'gateway_expires_at' => 'datetime',
         'tracking_parameters' => 'array',
     ];
