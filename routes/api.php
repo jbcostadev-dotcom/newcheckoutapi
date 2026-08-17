@@ -28,6 +28,7 @@ use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\API\PaymentController;
 use App\Http\Controllers\API\ProductController;
+use App\Http\Controllers\API\KitController;
 use App\Http\Controllers\API\ShippingMethodController;
 use App\Http\Controllers\API\ShopifyController;
 use App\Http\Controllers\API\ShopifyCollectionController;
@@ -104,6 +105,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Products (aninhado a stores)
     Route::apiResource('stores.products', ProductController::class);
+
+    // Kits de produtos (carrinhos prontos)
+    Route::get('stores/{store}/kits', [KitController::class, 'index']);
+    Route::post('stores/{store}/kits', [KitController::class, 'store']);
+    Route::get('stores/{store}/kits/{kit}', [KitController::class, 'show']);
+    Route::put('stores/{store}/kits/{kit}', [KitController::class, 'update']);
+    Route::delete('stores/{store}/kits/{kit}', [KitController::class, 'destroy']);
 
     // Checkout Settings
     Route::get('stores/{store}/settings', [CheckoutSettingController::class, 'show']);

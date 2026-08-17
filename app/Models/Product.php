@@ -69,4 +69,11 @@ class Product extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
+
+    public function kits()
+    {
+        return $this->belongsToMany(Kit::class, 'kit_product')
+            ->withPivot('quantity')
+            ->withTimestamps();
+    }
 }
