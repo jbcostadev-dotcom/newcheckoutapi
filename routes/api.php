@@ -111,6 +111,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Orders
     Route::get('stores/{store}/metrics', [OrderController::class, 'metrics']);
     Route::get('stores/{store}/orders', [OrderController::class, 'index']);
+    Route::get('stores/{store}/orders/export', [OrderController::class, 'export']);
     Route::get('stores/{store}/orders/{order}', [OrderController::class, 'show']);
     Route::patch('stores/{store}/orders/{order}/status', [OrderController::class, 'updateStatus']);
 

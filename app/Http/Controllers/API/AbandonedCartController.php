@@ -203,6 +203,11 @@ class AbandonedCartController extends Controller
     {
         $store = $request->user()->stores()->findOrFail($storeId);
 
+        $request->validate([
+            'start_at' => ['nullable', 'date'],
+            'end_at' => ['nullable', 'date', 'after:start_at'],
+        ]);
+
         $query = AbandonedCart::forStore($store->id)
             ->with(['customer:id,name,email,phone', 'order:id,status,amount,payment_method']);
 
@@ -225,6 +230,28 @@ class AbandonedCartController extends Controller
 
         if ($request->filled('step')) {
             $query->where('step_reached', $request->step);
+        }
+
+        if ($request->filled('start_at')) {
+            $startAt = Carbon::parse($request->string('start_at')->toString());
+            $query->where(function ($dateQuery) use ($startAt) {
+                $dateQuery->where('last_activity_at', '>=', $startAt)
+                    ->orWhere(function ($fallbackQuery) use ($startAt) {
+                        $fallbackQuery->whereNull('last_activity_at')
+                            ->where('created_at', '>=', $startAt);
+                    });
+            });
+        }
+
+        if ($request->filled('end_at')) {
+            $endAt = Carbon::parse($request->string('end_at')->toString());
+            $query->where(function ($dateQuery) use ($endAt) {
+                $dateQuery->where('last_activity_at', '<', $endAt)
+                    ->orWhere(function ($fallbackQuery) use ($endAt) {
+                        $fallbackQuery->whereNull('last_activity_at')
+                            ->where('created_at', '<', $endAt);
+                    });
+            });
         }
 
         $carts = $query->latest('last_activity_at')->paginate($request->get('per_page', 15));

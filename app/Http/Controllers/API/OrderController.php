@@ -7,6 +7,7 @@ use App\Models\CheckoutFunnelSession;
 use App\Models\Order;
 use App\Services\ShopifyOrderSync;
 use App\Services\UtmifyService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -273,8 +274,83 @@ class OrderController extends Controller
 
         $query = $store->orders()->with('items.product:id,name,image_url,price');
 
+        $this->applyOrderFilters($query, $request);
+
+        $orders = $query->latest()->paginate($request->get('per_page', 15));
+
+        return response()->json($orders);
+    }
+
+    /**
+     * Baixar todos os pedidos que correspondem aos filtros ativos.
+     */
+    public function export(Request $request, string $storeId)
+    {
+        $store = $request->user()->stores()->findOrFail($storeId);
+        $query = $store->orders()->with('items:id,order_id,name,qty,unit_price');
+
+        $this->applyOrderFilters($query, $request);
+
+        $filename = sprintf('pedidos-%s-%s.csv', $store->id, now()->format('Y-m-d-His'));
+
+        return response()->streamDownload(function () use ($query) {
+            $output = fopen('php://output', 'w');
+            if ($output === false) {
+                return;
+            }
+
+            fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, [
+                'Número do pedido',
+                'Cliente',
+                'E-mail',
+                'Telefone',
+                'Documento',
+                'Itens',
+                'Valor',
+                'Método de pagamento',
+                'Status',
+                'Data',
+            ], ';', '"', '');
+
+            foreach ($query->latest()->lazy(500) as $order) {
+                $items = $order->items
+                    ->map(fn ($item) => sprintf('%dx %s', $item->qty, $item->name))
+                    ->implode(' | ');
+
+                fputcsv($output, array_map([$this, 'safeCsvValue'], [
+                    $order->id,
+                    $order->customer_name,
+                    $order->customer_email,
+                    $order->customer_phone,
+                    $order->customer_document,
+                    $items,
+                    number_format((float) $order->amount, 2, ',', ''),
+                    $this->paymentMethodLabel($order->payment_method),
+                    $this->orderStatusLabel($order->status),
+                    $order->created_at?->timezone('America/Sao_Paulo')->format('d/m/Y H:i:s'),
+                ]), ';', '"', '');
+            }
+
+            fclose($output);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
+     * Aplica os mesmos filtros à listagem e à exportação.
+     */
+    private function applyOrderFilters($query, Request $request): void
+    {
+        $request->validate([
+            'start_at' => ['nullable', 'date'],
+            'end_at' => ['nullable', 'date', 'after:start_at'],
+        ]);
+
         // Filtro por status
-        if ($request->filled('status')) {
+        if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
         }
 
@@ -292,9 +368,48 @@ class OrderController extends Controller
             });
         }
 
-        $orders = $query->latest()->paginate($request->get('per_page', 15));
+        if ($request->filled('start_at')) {
+            $query->where('created_at', '>=', Carbon::parse($request->string('start_at')->toString()));
+        }
 
-        return response()->json($orders);
+        if ($request->filled('end_at')) {
+            $query->where('created_at', '<', Carbon::parse($request->string('end_at')->toString()));
+        }
+    }
+
+    private function safeCsvValue(mixed $value): string
+    {
+        $string = (string) ($value ?? '');
+
+        return preg_match('/^[=+\-@]/', $string) === 1 ? "'{$string}" : $string;
+    }
+
+    private function paymentMethodLabel(?string $method): string
+    {
+        return match ($method) {
+            'pix' => 'PIX',
+            'credit_card' => 'Cartão',
+            'boleto' => 'Boleto',
+            default => $method ?? '',
+        };
+    }
+
+    private function orderStatusLabel(?string $status): string
+    {
+        return match ($status) {
+            'pending' => 'Pendente',
+            'processing' => 'Processando',
+            'waiting_payment' => 'Aguardando pagamento',
+            'in_analysis' => 'Em análise',
+            'authorized' => 'Autorizado',
+            'paid' => 'Pago',
+            'failed', 'refused' => 'Recusado',
+            'refunded' => 'Reembolsado',
+            'chargedback' => 'Chargeback',
+            'in_protest' => 'Em protesto',
+            'canceled' => 'Cancelado',
+            default => $status ?? '',
+        };
     }
 
     /**
