@@ -187,6 +187,11 @@ class UnipayService
 
         $items = [];
         foreach ($order->items as $item) {
+            // Brindes permanecem no pedido interno/Shopify, mas não viram
+            // linha de cobrança com valor zero no gateway.
+            if ((float) $item->unit_price <= 0) {
+                continue;
+            }
             $items[] = [
                 'title' => $item->name,
                 'unitPrice' => (int) round((float) $item->unit_price * 100),

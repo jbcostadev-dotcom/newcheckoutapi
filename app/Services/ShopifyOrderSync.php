@@ -200,10 +200,15 @@ class ShopifyOrderSync
         foreach ($order->items as $item) {
             $variantId = $item->product?->shopify_variant_id;
             if ($variantId) {
-                $lineItems[] = [
+                $lineItem = [
                     'variant_id' => (int) $variantId,
                     'quantity' => (int) $item->qty,
                 ];
+                if ((float) $item->unit_price <= 0) {
+                    $lineItem['price'] = '0.00';
+                    $lineItem['properties'] = [['name' => 'Brinde', 'value' => 'Sim']];
+                }
+                $lineItems[] = $lineItem;
                 continue;
             }
 

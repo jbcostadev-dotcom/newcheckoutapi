@@ -83,6 +83,9 @@ class PaymentController extends Controller
             'shipping_address.cidade' => 'nullable|string|max:120',
             'shipping_address.uf' => 'nullable|string|max:2',
             'order_bump_id' => 'nullable|integer',
+            'gift_selections' => 'nullable|array',
+            'gift_selections.*.gift_id' => 'required|integer|distinct',
+            'gift_selections.*.product_id' => 'required|integer',
             'tracking_parameters' => 'nullable|array',
             'tracking_parameters.src' => 'nullable|string|max:500',
             'tracking_parameters.sck' => 'nullable|string|max:500',
@@ -310,6 +313,65 @@ class PaymentController extends Controller
         }
 
         $total = round($total, 2);
+
+        // Brindes são itens reais do pedido com preço zero. Toda regra é
+        // revalidada no servidor para impedir que o client escolha uma
+        // variante, campanha ou condição que não esteja elegível.
+        $giftSelections = $validated['gift_selections'] ?? [];
+        if (! empty($giftSelections)) {
+            $giftIds = collect($giftSelections)->pluck('gift_id')->map(fn ($id) => (int) $id)->all();
+            $gifts = $store->gifts()
+                ->with(['products' => fn ($query) => $query->where('is_active', true), 'targetProducts:id'])
+                ->whereIn('id', $giftIds)
+                ->where('is_active', true)
+                ->where('starts_at', '<=', Carbon::now())
+                ->where('expires_at', '>=', Carbon::now())
+                ->get()
+                ->keyBy('id');
+
+            $cartProductIds = array_keys($grouped);
+            $cartQuantity = array_sum($grouped);
+            $cartSubtotal = $total;
+
+            foreach ($giftSelections as $selection) {
+                $gift = $gifts->get((int) $selection['gift_id']);
+                $selectedProductId = (int) $selection['product_id'];
+
+                if (! $gift) {
+                    return response()->json(['error' => 'Brinde indisponível ou fora do período da campanha.'], 422);
+                }
+
+                if ($gift->scope === 'specific') {
+                    $targetIds = $gift->targetProducts->pluck('id')->map(fn ($id) => (int) $id)->all();
+                    if (empty(array_intersect($targetIds, $cartProductIds))) {
+                        return response()->json(['error' => 'O carrinho não possui o produto exigido para este brinde.'], 422);
+                    }
+                }
+
+                $eligible = match ($gift->rule_type) {
+                    'min_quantity' => $cartQuantity >= (int) $gift->min_quantity,
+                    'min_value' => $cartSubtotal >= (float) $gift->min_value,
+                    default => true,
+                };
+
+                if (! $eligible) {
+                    return response()->json(['error' => 'O carrinho ainda não atingiu a regra deste brinde.'], 422);
+                }
+
+                $giftProduct = $gift->products->firstWhere('id', $selectedProductId);
+                if (! $giftProduct) {
+                    return response()->json(['error' => 'A variante selecionada não pertence a este brinde.'], 422);
+                }
+
+                $orderItemsData[] = [
+                    'product_id' => $giftProduct->id,
+                    'name' => $giftProduct->name.' (Brinde)',
+                    'attributes' => $giftProduct->attributes,
+                    'unit_price' => 0,
+                    'qty' => 1,
+                ];
+            }
+        }
 
         // ── Order Bump aceito pelo cliente ──────────────────────────────
         // Se enviado, valida elegibilidade, calcula o preço com desconto e

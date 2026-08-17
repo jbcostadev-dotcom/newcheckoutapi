@@ -31,6 +31,13 @@ class CheckoutController extends Controller
             'upsell_text_color' => '#1A1A1A',
             'upsell_button_color' => '#22C55E',
             'upsell_button_text_color' => '#FFFFFF',
+            'gift_bg_color' => '#F7FFFA',
+            'gift_border_color' => '#A4DFC1',
+            'gift_badge_bg_color' => '#FFFFFF',
+            'gift_badge_border_color' => '#6EE7B7',
+            'gift_badge_text_color' => '#10B981',
+            'gift_progress_color' => '#10B981',
+            'gift_progress_bg_color' => '#E5E7EB',
             'button_text' => 'Finalizar Compra',
             'banner_message' => 'Digite aqui a mensagem',
             'header_store_name_visible' => true,
@@ -274,6 +281,111 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Brindes ativos no período e aplicáveis ao escopo do carrinho.
+     * A regra de quantidade/valor é exposta para atualizar o progresso quando
+     * o cliente altera quantidades. A elegibilidade é revalidada no pagamento.
+     */
+    private function buildGifts($store, array $productIds, bool $ignoreScope = false): array
+    {
+        $now = Carbon::now();
+        $cartProductIds = array_values(array_unique(array_map('intval', $productIds)));
+
+        $gifts = $store->gifts()
+            ->with([
+                'products' => fn ($query) => $query
+                    ->where('is_active', true)
+                    ->select('products.id', 'name', 'parent_title', 'attributes', 'image_url', 'stock_quantity'),
+                'targetProducts:id',
+            ])
+            ->where('is_active', true)
+            ->where('starts_at', '<=', $now)
+            ->where('expires_at', '>=', $now)
+            ->get();
+
+        $result = [];
+        foreach ($gifts as $gift) {
+            if ($gift->products->isEmpty()) {
+                continue;
+            }
+
+            $targetIds = $gift->targetProducts->pluck('id')->map(fn ($id) => (int) $id)->all();
+            if (! $ignoreScope && $gift->scope === 'specific' && empty(array_intersect($targetIds, $cartProductIds))) {
+                continue;
+            }
+
+            $result[] = [
+                'id' => $gift->id,
+                'name' => $gift->name,
+                'rule_type' => $gift->rule_type,
+                'min_quantity' => $gift->min_quantity,
+                'min_value' => $gift->min_value !== null ? (float) $gift->min_value : null,
+                'scope' => $gift->scope,
+                'products' => $gift->products->map(fn ($product) => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'parent_title' => $product->parent_title,
+                    'attributes' => $product->attributes,
+                    'price' => 0,
+                    'image_url' => $product->image_url,
+                    'stock_quantity' => $product->stock_quantity,
+                ])->values(),
+            ];
+        }
+
+        return $result;
+    }
+
+    private function buildPreviewGift(): array
+    {
+        return [[
+            'id' => -1,
+            'name' => 'Brinde de exemplo',
+            'rule_type' => 'min_value',
+            'min_quantity' => null,
+            'min_value' => 299,
+            'scope' => 'any',
+            'products' => [
+                [
+                    'id' => -101,
+                    'name' => 'Tênis Confortável Preto 33',
+                    'parent_title' => 'Tênis Confortável',
+                    'attributes' => [
+                        ['name' => 'Cor', 'value' => 'Preto'],
+                        ['name' => 'Tamanho', 'value' => '33'],
+                    ],
+                    'price' => 0,
+                    'image_url' => null,
+                    'stock_quantity' => 10,
+                ],
+                [
+                    'id' => -102,
+                    'name' => 'Tênis Confortável Preto 34',
+                    'parent_title' => 'Tênis Confortável',
+                    'attributes' => [
+                        ['name' => 'Cor', 'value' => 'Preto'],
+                        ['name' => 'Tamanho', 'value' => '34'],
+                    ],
+                    'price' => 0,
+                    'image_url' => null,
+                    'stock_quantity' => 10,
+                ],
+                [
+                    'id' => -103,
+                    'name' => 'Tênis Confortável Rosa 33',
+                    'parent_title' => 'Tênis Confortável',
+                    'attributes' => [
+                        ['name' => 'Cor', 'value' => 'Rosa'],
+                        ['name' => 'Tamanho', 'value' => '33'],
+                    ],
+                    'price' => 0,
+                    'image_url' => null,
+                    'stock_quantity' => 10,
+                ],
+            ],
+        ]];
+    }
+
+    /**
      * Constrói o bloco de configuração do Google Ads exposto ao checkout.
      * Retorna apenas os campos necessários ao client-side (sem segredos).
      */
@@ -493,6 +605,7 @@ class CheckoutController extends Controller
             'total' => round($total, 2),
             'shipping_methods' => $shippingMethods,
             'order_bumps' => $this->buildOrderBumps($store, $uniqueIds, $effectiveSettings),
+            'gifts' => $this->buildGifts($store, $uniqueIds),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
@@ -580,6 +693,7 @@ class CheckoutController extends Controller
             'preview' => true,
             'shipping_methods' => $shippingMethods,
             'order_bumps' => $this->buildPreviewOrderBumps($effectiveSettings),
+            'gifts' => $this->buildPreviewGift(),
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')

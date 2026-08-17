@@ -13,6 +13,7 @@ use App\Http\Controllers\API\DomainController;
 use App\Http\Controllers\API\EmailLogController;
 use App\Http\Controllers\API\EmailTemplateController;
 use App\Http\Controllers\API\GatewayController;
+use App\Http\Controllers\API\GiftController;
 use App\Http\Controllers\API\GoogleAdsSettingController;
 use App\Http\Controllers\API\LiveCheckoutController;
 use App\Http\Controllers\API\MetaConversionController;
@@ -216,6 +217,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{store}/coupons', [CouponController::class, 'store']);
     Route::put('stores/{store}/coupons/{coupon}', [CouponController::class, 'update']);
     Route::delete('stores/{store}/coupons/{coupon}', [CouponController::class, 'destroy']);
+
+    // Gifts (Brindes)
+    Route::get('stores/{store}/gifts', [GiftController::class, 'index']);
+    Route::post('stores/{store}/gifts', [GiftController::class, 'store']);
+    Route::put('stores/{store}/gifts/{gift}', [GiftController::class, 'update']);
+    Route::delete('stores/{store}/gifts/{gift}', [GiftController::class, 'destroy']);
 
     // Abandoned Carts (Carrinhos Abandonados)
     Route::get('stores/{store}/abandoned-carts', [AbandonedCartController::class, 'index']);
