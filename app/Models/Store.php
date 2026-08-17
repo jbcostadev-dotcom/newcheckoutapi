@@ -129,6 +129,11 @@ class Store extends Model
         return $this->hasMany(Coupon::class);
     }
 
+    public function webhooks()
+    {
+        return $this->hasMany(Webhook::class);
+    }
+
     public function achievementAwards()
     {
         return $this->hasMany(AchievementAward::class);

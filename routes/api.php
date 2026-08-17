@@ -39,6 +39,7 @@ use App\Http\Controllers\API\UtmifySettingController;
 use App\Http\Controllers\API\WhatsappChipController;
 use App\Http\Controllers\API\WhatsappLogController;
 use App\Http\Controllers\API\WhatsappTemplateController;
+use App\Http\Controllers\API\WebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -212,6 +213,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('stores/{store}/abandoned-carts', [AbandonedCartController::class, 'index']);
     Route::get('stores/{store}/abandoned-carts/{cart}', [AbandonedCartController::class, 'show']);
     Route::patch('stores/{store}/abandoned-carts/{cart}/status', [AbandonedCartController::class, 'updateStatus']);
+
+    // Webhooks de saída do checkout
+    Route::get('stores/{store}/webhooks', [WebhookController::class, 'index']);
+    Route::post('stores/{store}/webhooks', [WebhookController::class, 'store']);
+    Route::put('stores/{store}/webhooks/{webhook}', [WebhookController::class, 'update']);
+    Route::delete('stores/{store}/webhooks/{webhook}', [WebhookController::class, 'destroy']);
+    Route::post('stores/{store}/webhooks/{webhook}/rotate-token', [WebhookController::class, 'rotateToken']);
 
     // Live Checkout (Checkout ao vivo)
     Route::get('stores/{store}/live-checkout', [LiveCheckoutController::class, 'index']);
