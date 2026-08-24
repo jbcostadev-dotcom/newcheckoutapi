@@ -7,11 +7,16 @@ use App\Models\Store;
 use App\Models\Gateway;
 use App\Models\OrderBump;
 use App\Models\Coupon;
+use App\Services\CheckoutResponseCache;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
 {
+    public function __construct(private readonly CheckoutResponseCache $checkoutCache)
+    {
+    }
+
     private function defaultSettings()
     {
         return (object) [
@@ -519,12 +524,6 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'Missing store_id/domain or product_ids parameters'], 400);
         }
 
-        $store = Store::resolveByIdentifier($identifier);
-
-        if (!$store) {
-            return response()->json(['error' => 'Store not found or inactive'], 404);
-        }
-
         $ids = collect(explode(',', $productIdsParam))
             ->map(fn ($v) => trim($v))
             ->filter()
@@ -537,6 +536,37 @@ class CheckoutController extends Controller
 
         $uniqueIds = $ids->unique()->values()->all();
 
+        $result = $this->checkoutCache->rememberCheckout(
+            (string) $identifier,
+            $ids->all(),
+            function () use ($identifier, $ids, $uniqueIds) {
+                $store = Store::resolveByIdentifier((string) $identifier);
+
+                if (! $store) {
+                    return [
+                        'store_id' => null,
+                        'status' => 404,
+                        'body' => ['error' => 'Store not found or inactive'],
+                    ];
+                }
+
+                return [
+                    'store_id' => (int) $store->id,
+                    ...$this->buildCheckoutResult($store, $ids, $uniqueIds),
+                ];
+            },
+        );
+
+        return response()->json($result['body'], $result['status']);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, int>  $ids
+     * @param  array<int, int>  $uniqueIds
+     * @return array{status: int, body: array<string, mixed>}
+     */
+    private function buildCheckoutResult(Store $store, $ids, array $uniqueIds): array
+    {
         $products = $store->products()
             ->whereIn('id', $uniqueIds)
             ->where('is_active', true)
@@ -544,7 +574,10 @@ class CheckoutController extends Controller
             ->keyBy('id');
 
         if ($products->isEmpty()) {
-            return response()->json(['error' => 'No active products found'], 404);
+            return [
+                'status' => 404,
+                'body' => ['error' => 'No active products found'],
+            ];
         }
 
         $items = [];
@@ -560,7 +593,10 @@ class CheckoutController extends Controller
         }
 
         if (empty($items)) {
-            return response()->json(['error' => 'No active products found'], 404);
+            return [
+                'status' => 404,
+                'body' => ['error' => 'No active products found'],
+            ];
         }
 
         $shippingMethods = $store->shippingMethods()
@@ -583,40 +619,43 @@ class CheckoutController extends Controller
 
         $effectiveSettings = $store->checkoutSettings ?? $this->defaultSettings();
 
-        return response()->json([
-            'store' => [
-                'id' => $store->id,
-                'name' => $store->name,
-                'settings' => $effectiveSettings,
-                'google_ads' => $this->buildGoogleAdsBlock($store),
-                'meta_pixel' => $this->buildMetaPixelBlock($store),
-                'tiktok_pixel' => $this->buildTikTokPixelBlock($store),
-                'kwai_pixel' => $this->buildKwaiPixelBlock($store),
-                'taboola_pixel' => $this->buildTaboolaPixelBlock($store),
-                'gateways' => $store->gateways->map(function ($gateway) {
-                    return [
-                        'provider' => $gateway->provider,
-                        'public_key' => $gateway->provider === 'unipay' ? $gateway->api_key : null,
-                    ];
-                }),
-                'payment_methods' => $this->buildPaymentMethods($effectiveSettings, $store),
+        return [
+            'status' => 200,
+            'body' => [
+                'store' => [
+                    'id' => $store->id,
+                    'name' => $store->name,
+                    'settings' => $effectiveSettings,
+                    'google_ads' => $this->buildGoogleAdsBlock($store),
+                    'meta_pixel' => $this->buildMetaPixelBlock($store),
+                    'tiktok_pixel' => $this->buildTikTokPixelBlock($store),
+                    'kwai_pixel' => $this->buildKwaiPixelBlock($store),
+                    'taboola_pixel' => $this->buildTaboolaPixelBlock($store),
+                    'gateways' => $store->gateways->map(function ($gateway) {
+                        return [
+                            'provider' => $gateway->provider,
+                            'public_key' => $gateway->provider === 'unipay' ? $gateway->api_key : null,
+                        ];
+                    }),
+                    'payment_methods' => $this->buildPaymentMethods($effectiveSettings, $store),
+                ],
+                'products' => $items,
+                'total' => round($total, 2),
+                'shipping_methods' => $shippingMethods,
+                'order_bumps' => $this->buildOrderBumps($store, $uniqueIds, $effectiveSettings),
+                'gifts' => $this->buildGifts($store, $uniqueIds),
+                'social_proofs' => $store->socialProofs()
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get()
+                    ->map(fn ($p) => [
+                        'name' => $p->name,
+                        'testimonial' => $p->testimonial,
+                        'photo_url' => $p->photo_url,
+                        'stars' => $p->stars,
+                    ]),
             ],
-            'products' => $items,
-            'total' => round($total, 2),
-            'shipping_methods' => $shippingMethods,
-            'order_bumps' => $this->buildOrderBumps($store, $uniqueIds, $effectiveSettings),
-            'gifts' => $this->buildGifts($store, $uniqueIds),
-            'social_proofs' => $store->socialProofs()
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->get()
-                ->map(fn ($p) => [
-                    'name' => $p->name,
-                    'testimonial' => $p->testimonial,
-                    'photo_url' => $p->photo_url,
-                    'stars' => $p->stars,
-                ]),
-        ]);
+        ];
     }
 
     public function preview(Request $request)

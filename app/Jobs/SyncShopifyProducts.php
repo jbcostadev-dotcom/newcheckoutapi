@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Store;
+use App\Services\CheckoutResponseCache;
 use App\Services\CheckoutUrlGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -178,6 +179,10 @@ class SyncShopifyProducts implements ShouldQueue
                     ->update(['is_active' => false]);
             }
         }
+
+        // Garante invalidação também para o update em massa das variantes
+        // ausentes, que não dispara eventos individuais do Eloquent.
+        app(CheckoutResponseCache::class)->invalidateStore((int) $this->store->id);
 
         Log::info('Shopify sync concluído', [
             'store_id' => $this->store->id,

@@ -34,6 +34,7 @@ class GiftController extends Controller
         $gift = $store->gifts()->create($this->giftAttributes($validated));
         $gift->products()->sync($productIds);
         $gift->targetProducts()->sync($targetProductIds);
+        $gift->touch();
 
         return response()->json($this->loadGift($gift), 201);
     }
@@ -48,6 +49,7 @@ class GiftController extends Controller
         $gift->update($this->giftAttributes($validated));
         $gift->products()->sync($productIds);
         $gift->targetProducts()->sync($targetProductIds);
+        $gift->touch();
 
         return response()->json($this->loadGift($gift));
     }

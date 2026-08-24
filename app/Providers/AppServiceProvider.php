@@ -2,12 +2,27 @@
 
 namespace App\Providers;
 
+use App\Models\CheckoutSetting;
+use App\Models\Domain;
+use App\Models\Gateway;
+use App\Models\Gift;
+use App\Models\GoogleAdsSetting;
+use App\Models\KwaiPixelSetting;
+use App\Models\MetaPixelSetting;
+use App\Models\Order;
+use App\Models\OrderBump;
+use App\Models\Product;
+use App\Models\ShippingMethod;
+use App\Models\SocialProof;
+use App\Models\Store;
+use App\Models\TaboolaPixelSetting;
+use App\Models\TikTokPixelSetting;
+use App\Observers\CheckoutCacheObserver;
+use App\Observers\OrderObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
-use App\Models\Order;
-use App\Observers\OrderObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -25,6 +40,26 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Order::observe(OrderObserver::class);
+
+        foreach ([
+            Store::class,
+            Domain::class,
+            Product::class,
+            CheckoutSetting::class,
+            Gateway::class,
+            ShippingMethod::class,
+            OrderBump::class,
+            Gift::class,
+            SocialProof::class,
+            GoogleAdsSetting::class,
+            MetaPixelSetting::class,
+            TikTokPixelSetting::class,
+            KwaiPixelSetting::class,
+            TaboolaPixelSetting::class,
+        ] as $model) {
+            $model::observe(CheckoutCacheObserver::class);
+        }
+
         // Anti-bruteforce para o endpoint de login.
         // Combina IP + e-mail alvo (lowercase) para isolar tentativas por conta,
         // evitando que ataques a um usuário esgotem a cota de outro.
