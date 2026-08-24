@@ -234,7 +234,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{store}/webhooks', [WebhookController::class, 'store']);
     Route::put('stores/{store}/webhooks/{webhook}', [WebhookController::class, 'update']);
     Route::delete('stores/{store}/webhooks/{webhook}', [WebhookController::class, 'destroy']);
-    Route::post('stores/{store}/webhooks/{webhook}/rotate-token', [WebhookController::class, 'rotateToken']);
 
     // Live Checkout (Checkout ao vivo)
     Route::get('stores/{store}/live-checkout', [LiveCheckoutController::class, 'index']);

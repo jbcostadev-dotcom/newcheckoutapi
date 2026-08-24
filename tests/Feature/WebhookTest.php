@@ -21,10 +21,17 @@ class WebhookTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_owner_can_create_update_rotate_and_delete_a_webhook(): void
+    public function test_store_token_is_reused_by_every_webhook_and_never_changes_on_edit(): void
     {
         $user = User::factory()->create();
         $store = $this->createStore($user);
+        $storeToken = $store->webhook_token;
+
+        $this->assertNotEmpty($storeToken);
+        $this->assertNotSame(
+            $storeToken,
+            DB::table('stores')->where('id', $store->id)->value('webhook_token'),
+        );
 
         $created = $this->actingAs($user, 'sanctum')->postJson(
             "/api/stores/{$store->id}/webhooks",
@@ -43,12 +50,22 @@ class WebhookTest extends TestCase
             ->assertJsonPath('is_active', true);
 
         $webhookId = $created->json('id');
-        $originalToken = $created->json('token');
-        $this->assertNotEmpty($originalToken);
+        $this->assertSame($storeToken, $created->json('token'));
         $this->assertNotSame(
-            $originalToken,
+            $storeToken,
             DB::table('webhooks')->where('id', $webhookId)->value('token'),
         );
+
+        $second = $this->actingAs($user, 'sanctum')->postJson(
+            "/api/stores/{$store->id}/webhooks",
+            [
+                'name' => 'CRM',
+                'url' => 'https://example.com/hooks/crm',
+                'events' => [Webhook::EVENT_ORDER_CREATED],
+                'is_active' => true,
+            ],
+        );
+        $second->assertCreated()->assertJsonPath('token', $storeToken);
 
         $this->actingAs($user, 'sanctum')->putJson(
             "/api/stores/{$store->id}/webhooks/{$webhookId}",
@@ -58,19 +75,36 @@ class WebhookTest extends TestCase
                 'events' => [Webhook::EVENT_ORDER_PAID],
                 'is_active' => false,
             ],
-        )->assertOk()->assertJsonPath('name', 'ERP principal');
-
-        $rotated = $this->actingAs($user, 'sanctum')->postJson(
-            "/api/stores/{$store->id}/webhooks/{$webhookId}/rotate-token",
-        );
-        $rotated->assertOk();
-        $this->assertNotSame($originalToken, $rotated->json('token'));
+        )->assertOk()
+            ->assertJsonPath('name', 'ERP principal')
+            ->assertJsonPath('token', $storeToken);
 
         $this->actingAs($user, 'sanctum')
             ->deleteJson("/api/stores/{$store->id}/webhooks/{$webhookId}")
             ->assertNoContent();
 
         $this->assertDatabaseMissing('webhooks', ['id' => $webhookId]);
+        $this->assertSame($storeToken, $store->fresh()->webhook_token);
+    }
+
+    public function test_store_creation_returns_the_webhook_token_before_any_endpoint_exists(): void
+    {
+        $user = User::factory()->create();
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/stores', [
+            'name' => 'Loja sem endpoint',
+            'type' => 'shopify',
+            'subdomain' => 'loja-sem-endpoint-'.strtolower(fake()->unique()->lexify('????')),
+        ]);
+
+        $created->assertCreated();
+        $token = $created->json('webhook_token');
+        $this->assertNotEmpty($token);
+        $this->assertSame(0, Webhook::where('store_id', $created->json('id'))->count());
+        $this->assertNotSame(
+            $token,
+            DB::table('stores')->where('id', $created->json('id'))->value('webhook_token'),
+        );
     }
 
     public function test_webhook_rejects_private_or_local_destinations(): void
@@ -144,10 +178,11 @@ class WebhookTest extends TestCase
         Http::fake(['https://example.com/*' => Http::response('', 204)]);
         $user = User::factory()->create();
         $store = $this->createStore($user);
+        $store->update(['webhook_token' => 'bearer-secret']);
         $webhook = $store->webhooks()->create([
             'name' => 'Destino',
             'url' => 'https://example.com/hooks/checkout',
-            'token' => 'bearer-secret',
+            'token' => 'legacy-endpoint-secret',
             'events' => [Webhook::EVENT_ORDER_CREATED],
             'is_active' => true,
         ]);

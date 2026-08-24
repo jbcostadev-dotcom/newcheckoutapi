@@ -29,7 +29,7 @@ class DeliverWebhook implements ShouldQueue
 
     public function handle(): void
     {
-        $delivery = WebhookDelivery::with('webhook')->find($this->deliveryId);
+        $delivery = WebhookDelivery::with('webhook.store')->find($this->deliveryId);
         if (! $delivery || $delivery->status === WebhookDelivery::STATUS_DELIVERED) {
             return;
         }
@@ -68,8 +68,9 @@ class DeliverWebhook implements ShouldQueue
                 ->timeout(5)
                 ->withOptions($options);
 
-            if ($webhook->token !== '') {
-                $request = $request->withToken($webhook->token);
+            $token = $webhook->store?->webhook_token ?: $webhook->token;
+            if ($token !== '') {
+                $request = $request->withToken($token);
             }
 
             $payload = $delivery->payload;

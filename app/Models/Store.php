@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class Store extends Model
 {
@@ -21,18 +22,29 @@ class Store extends Model
         'shopify_injected_theme_id',
         'shopify_injected_at',
         'status',
+        'webhook_token',
     ];
 
     protected $casts = [
         'status' => 'boolean',
         'shopify_injected_theme_id' => 'integer',
         'shopify_injected_at' => 'datetime',
+        'webhook_token' => 'encrypted',
     ];
 
     protected $hidden = [
         'shopify_access_token',
         'shopify_client_secret',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Store $store) {
+            if (empty($store->webhook_token)) {
+                $store->webhook_token = Str::random(48);
+            }
+        });
+    }
 
     public function user()
     {

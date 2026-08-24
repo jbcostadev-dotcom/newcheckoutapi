@@ -7,7 +7,6 @@ use App\Models\Webhook;
 use App\Support\WebhookUrlGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class WebhookController extends Controller
@@ -31,7 +30,7 @@ class WebhookController extends Controller
 
         $webhook = $store->webhooks()->create([
             ...$validated,
-            'token' => Str::random(48),
+            'token' => $store->webhook_token,
         ]);
 
         return response()->json($webhook, 201);
@@ -52,15 +51,6 @@ class WebhookController extends Controller
         $store->webhooks()->findOrFail($webhookId)->delete();
 
         return response()->noContent();
-    }
-
-    public function rotateToken(Request $request, string $storeId, string $webhookId)
-    {
-        $store = $request->user()->stores()->findOrFail($storeId);
-        $webhook = $store->webhooks()->findOrFail($webhookId);
-        $webhook->update(['token' => Str::random(48)]);
-
-        return response()->json($webhook->fresh()->loadCount('deliveries'));
     }
 
     private function validatePayload(Request $request): array

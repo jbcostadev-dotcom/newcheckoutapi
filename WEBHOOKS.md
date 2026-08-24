@@ -26,6 +26,8 @@ Um Pix, boleto ou cartão tentado não é classificado como `CART_ABANDONED`. Pa
 - Redirecionamentos HTTP não são seguidos
 - A ordem de chegada não é garantida
 
+O token é criado junto com a loja e é único por loja. Todos os endpoints de webhook da mesma loja usam esse mesmo token; editar, excluir ou recriar um endpoint não altera a credencial.
+
 Cada combinação de endpoint, evento e recurso é registrada uma única vez. O consumidor também deve deduplicar usando `orderId + eventType`.
 
 ## Payload
