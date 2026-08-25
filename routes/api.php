@@ -28,6 +28,7 @@ use App\Http\Controllers\API\MelhorEnvioSettingController;
 use App\Http\Controllers\API\OrderBumpController;
 use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\API\PaymentController;
+use App\Http\Controllers\API\PaymentIntentController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\KitController;
 use App\Http\Controllers\API\ShippingMethodController;
@@ -59,14 +60,17 @@ Route::get('/shopify/callback', [ShopifyController::class, 'callback']);
 Route::get('/checkout', [CheckoutController::class, 'show']);
 Route::get('/checkout/preview', [CheckoutController::class, 'preview']);
 Route::get('/checkout/coupon', [CheckoutController::class, 'validateCoupon']);
-Route::post('/checkout/process', [PaymentController::class, 'process']);
+Route::post('/checkout/process', [PaymentController::class, 'process'])
+    ->middleware('payment.idempotency:checkout');
+Route::get('/checkout/payment-intent/status', [PaymentIntentController::class, 'status']);
 Route::get('/checkout/order/{orderId}/pix', [PaymentController::class, 'getPixStatus']);
 Route::get('/checkout/order/{orderId}/confirmed', [PaymentController::class, 'getOrderConfirmed']);
 Route::post('/webhook/unipay', [PaymentController::class, 'webhook']);
 
 // Upsell público
 Route::get('/checkout/upsell', [UpsellController::class, 'getOffer']);
-Route::post('/checkout/upsell/charge', [UpsellController::class, 'charge']);
+Route::post('/checkout/upsell/charge', [UpsellController::class, 'charge'])
+    ->middleware('payment.idempotency:upsell');
 Route::post('/checkout/upsell/decline', [UpsellController::class, 'decline']);
 
 // Shopify checkout redirect (público — chamado pelo snippet injetado no tema)

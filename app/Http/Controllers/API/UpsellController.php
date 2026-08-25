@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API;
 
+use App\Exceptions\UnipayException;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -9,9 +10,12 @@ use App\Models\Product;
 use App\Models\Store;
 use App\Models\Upsell;
 use App\Services\GatewayResolverService;
+use App\Services\PaymentIdempotencyService;
 use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use Illuminate\Http\Request;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class UpsellController extends Controller
@@ -265,16 +269,46 @@ class UpsellController extends Controller
             }
         }
 
+        $claimed = DB::transaction(function () use ($order) {
+            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+            if ($lockedOrder->hasUpsellDecided() || $lockedOrder->isUpsellProcessing()) {
+                return false;
+            }
+
+            $lockedOrder->update(['upsell_status' => 'processing']);
+
+            return true;
+        });
+
+        if (! $claimed) {
+            return response()->json([
+                'success' => false,
+                'order_id' => $order->id,
+                'status' => Order::STATUS_PROCESSING,
+                'idempotency_status' => 'processing',
+                'retry_after_seconds' => 2,
+            ], 202, ['Retry-After' => '2']);
+        }
+
+        app(PaymentIdempotencyService::class)->attachOrder($request, $order);
+        app(PaymentIdempotencyService::class)->markGatewayStarted($request, $order);
+
         try {
             if ($order->payment_method === 'credit_card') {
-                return $this->chargeCard($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $validated['installments'] ?? 1);
+                $response = $this->chargeCard($request, $order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $validated['installments'] ?? 1);
+            } elseif ($order->payment_method === 'pix') {
+                $response = $this->chargePix($request, $order, $upsell, $variantProduct, $finalPrice, $variantAttributes);
+            } else {
+                $response = response()->json(['error' => 'Payment method not supported for upsell'], 400);
             }
 
-            if ($order->payment_method === 'pix') {
-                return $this->chargePix($order, $upsell, $variantProduct, $finalPrice, $variantAttributes);
+            if ($response->getStatusCode() >= 400) {
+                Order::whereKey($order->id)
+                    ->where('upsell_status', 'processing')
+                    ->update(['upsell_status' => null]);
             }
 
-            return response()->json(['error' => 'Payment method not supported for upsell'], 400);
+            return $response;
         } catch (\Throwable $e) {
             Log::error('Erro ao processar upsell', [
                 'order_id' => $order->id,
@@ -313,6 +347,13 @@ class UpsellController extends Controller
 
         if ($order->hasUpsellDecided()) {
             return response()->json(['success' => true, 'message' => 'Upsell already decided']);
+        }
+
+        if ($order->isUpsellProcessing()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A cobrança da oferta ainda está sendo confirmada.',
+            ], 409);
         }
 
         $order->update(['upsell_status' => 'declined']);
@@ -510,7 +551,7 @@ class UpsellController extends Controller
     /**
      * Processa cobrança de upsell no cartão.
      */
-    private function chargeCard(Order $order, Upsell $upsell, Product $variantProduct, float $finalPrice, ?array $variantAttributes, int $installments)
+    private function chargeCard(Request $request, Order $order, Upsell $upsell, Product $variantProduct, float $finalPrice, ?array $variantAttributes, int $installments)
     {
         if (empty($order->card_token)) {
             return response()->json([
@@ -564,7 +605,11 @@ class UpsellController extends Controller
                 }
 
                 break;
-            } catch (\Throwable $e) {
+            } catch (UnipayException $e) {
+                if (($e->statusCode ?? 500) >= 500) {
+                    throw $e;
+                }
+
                 $lastError = $e;
                 Log::warning('Upsell cartão: gateway falhou, tentando fallback', [
                     'order_id' => $order->id,
@@ -574,6 +619,10 @@ class UpsellController extends Controller
                     'message' => $e->getMessage(),
                 ]);
                 continue;
+            } catch (ConnectionException $e) {
+                throw $e;
+            } catch (\Throwable $e) {
+                throw $e;
             }
         }
 
@@ -587,6 +636,9 @@ class UpsellController extends Controller
         // Adiciona item ao pedido existente
         $this->applyUpsellToOrder($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway);
 
+        $transactionId = $result['id'] ?? $result['data']['id'] ?? null;
+        app(PaymentIdempotencyService::class)->attachGatewayTransaction($request, $transactionId ? (string) $transactionId : null);
+
         return response()->json([
             'success' => true,
             'gateway_id' => $usedGateway->id,
@@ -596,7 +648,7 @@ class UpsellController extends Controller
     /**
      * Processa geração de PIX para upsell.
      */
-    private function chargePix(Order $order, Upsell $upsell, Product $variantProduct, float $finalPrice, ?array $variantAttributes)
+    private function chargePix(Request $request, Order $order, Upsell $upsell, Product $variantProduct, float $finalPrice, ?array $variantAttributes)
     {
         $gatewaysToTry = GatewayResolverService::resolve($order->store, 'pix', $order->gateway_id);
 
@@ -628,7 +680,11 @@ class UpsellController extends Controller
                 }
 
                 break;
-            } catch (\Throwable $e) {
+            } catch (UnipayException $e) {
+                if (($e->statusCode ?? 500) >= 500) {
+                    throw $e;
+                }
+
                 $lastError = $e;
                 Log::warning('Upsell PIX: gateway falhou, tentando fallback', [
                     'order_id' => $order->id,
@@ -638,6 +694,10 @@ class UpsellController extends Controller
                     'message' => $e->getMessage(),
                 ]);
                 continue;
+            } catch (ConnectionException $e) {
+                throw $e;
+            } catch (\Throwable $e) {
+                throw $e;
             }
         }
 
@@ -649,6 +709,9 @@ class UpsellController extends Controller
         }
 
         $this->applyUpsellToOrder($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway, $result);
+
+        $transactionId = $result['id'] ?? $result['data']['id'] ?? null;
+        app(PaymentIdempotencyService::class)->attachGatewayTransaction($request, $transactionId ? (string) $transactionId : null);
 
         return response()->json([
             'success' => true,
@@ -670,14 +733,58 @@ class UpsellController extends Controller
         $usedGateway,
         ?array $gatewayResult = null
     ): void {
-        $item = OrderItem::create([
-            'order_id' => $order->id,
-            'product_id' => $variantProduct->id,
-            'name' => $variantProduct->name,
-            'qty' => 1,
-            'unit_price' => $finalPrice,
-            'attributes' => $variantAttributes ?? $variantProduct->attributes,
-        ]);
+        $item = DB::transaction(function () use ($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway, $gatewayResult) {
+            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+            if ($lockedOrder->upsell_status === 'accepted') {
+                return null;
+            }
+
+            $item = OrderItem::create([
+                'order_id' => $lockedOrder->id,
+                'product_id' => $variantProduct->id,
+                'name' => $variantProduct->name,
+                'qty' => 1,
+                'unit_price' => $finalPrice,
+                'attributes' => $variantAttributes ?? $variantProduct->attributes,
+            ]);
+
+            $updateData = [
+                'amount' => round((float) $lockedOrder->amount + $finalPrice, 2),
+                'upsell_id' => $upsell->id,
+                'upsell_amount' => $finalPrice,
+                'upsell_status' => 'accepted',
+                'upsell_product_id' => $variantProduct->id,
+                'gateway_id' => $usedGateway->id,
+            ];
+
+            if ($gatewayResult && $lockedOrder->payment_method === 'pix') {
+                $pixData = $gatewayResult['pix'] ?? $gatewayResult['data']['pix'] ?? null;
+                if (is_array($pixData)) {
+                    $updateData['pix_copia_cola'] = $pixData['qrcode'] ?? $pixData['copyPaste'] ?? null;
+                }
+                $updateData['gateway_transaction_id'] = $gatewayResult['id'] ?? $gatewayResult['transaction_id'] ?? null;
+
+                $expiresAt = null;
+                if (is_array($pixData) && !empty($pixData['expirationDate'])) {
+                    $expiresAt = $pixData['expirationDate'];
+                } elseif (!empty($gatewayResult['expiration_date'])) {
+                    $expiresAt = $gatewayResult['expiration_date'];
+                } elseif (!empty($gatewayResult['expires_at'])) {
+                    $expiresAt = $gatewayResult['expires_at'];
+                }
+                if ($expiresAt) {
+                    $updateData['gateway_expires_at'] = $expiresAt;
+                }
+            }
+
+            $lockedOrder->update($updateData);
+
+            return $item;
+        });
+
+        if (! $item) {
+            return;
+        }
 
         // Sincroniza o item de upsell no pedido Shopify já existente (best-effort).
         // Se o pedido Shopify ainda não existir, o item será incluído quando
@@ -695,36 +802,7 @@ class UpsellController extends Controller
             ]);
         }
 
-        $updateData = [
-            'amount' => round((float) $order->amount + $finalPrice, 2),
-            'upsell_id' => $upsell->id,
-            'upsell_amount' => $finalPrice,
-            'upsell_status' => 'accepted',
-            'upsell_product_id' => $variantProduct->id,
-            'gateway_id' => $usedGateway->id,
-        ];
-
-        if ($gatewayResult && $order->payment_method === 'pix') {
-            $pixData = $gatewayResult['pix'] ?? $gatewayResult['data']['pix'] ?? null;
-            if (is_array($pixData)) {
-                $updateData['pix_copia_cola'] = $pixData['qrcode'] ?? $pixData['copyPaste'] ?? null;
-            }
-            $updateData['gateway_transaction_id'] = $gatewayResult['id'] ?? $gatewayResult['transaction_id'] ?? null;
-
-            $expiresAt = null;
-            if (is_array($pixData) && !empty($pixData['expirationDate'])) {
-                $expiresAt = $pixData['expirationDate'];
-            } elseif (!empty($gatewayResult['expiration_date'])) {
-                $expiresAt = $gatewayResult['expiration_date'];
-            } elseif (!empty($gatewayResult['expires_at'])) {
-                $expiresAt = $gatewayResult['expires_at'];
-            }
-            if ($expiresAt) {
-                $updateData['gateway_expires_at'] = $expiresAt;
-            }
-        }
-
-        $order->update($updateData);
+        $order->refresh();
     }
 
     /**

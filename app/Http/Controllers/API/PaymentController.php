@@ -16,6 +16,7 @@ use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use App\Services\UtmifyService;
 use App\Services\MetaConversionsApiService;
+use App\Services\PaymentIdempotencyService;
 use App\Services\TikTokEventsApiService;
 use App\Services\KwaiEventsApiService;
 use App\Services\TaboolaPostbackService;
@@ -26,6 +27,7 @@ use App\Models\EmailTemplate;
 use App\Services\EmailEventService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -467,8 +469,14 @@ class PaymentController extends Controller
             $finalTotal = round($finalTotal * $interestMultiplier, 2);
         }
 
+        // Em uma falha anterior à gateway, a mesma intenção retoma o pedido já
+        // reservado em vez de gerar um segundo pedido.
+        $idempotency = app(PaymentIdempotencyService::class);
+        $order = $idempotency->resumableOrder($request);
+
         // Cria pedido + itens em transação (atomicidade).
-        $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $finalTotal, $shippingMethodId, $shippingPrice, $installments) {
+        if (! $order) {
+            $order = DB::transaction(function () use ($store, $validated, $orderItemsData, $finalTotal, $shippingMethodId, $shippingPrice, $installments) {
             $ship = $validated['shipping_address'] ?? [];
 
             // Vincula (ou cria) o cliente pelo email + loja para manter histórico.
@@ -543,8 +551,13 @@ class PaymentController extends Controller
                 $order->items()->create($itemData);
             }
 
-            return $order;
-        });
+                return $order;
+            });
+        } else {
+            $order->update(['status' => Order::STATUS_PENDING]);
+        }
+
+        $idempotency->attachOrder($request, $order);
 
         // Associa o pedido a um carrinho abandonado em aberto (best-effort).
         try {
@@ -662,6 +675,8 @@ class PaymentController extends Controller
             $lastError = null;
             $usedGateway = null;
 
+            app(PaymentIdempotencyService::class)->markGatewayStarted($request, $order);
+
             foreach ($gatewaysToTry as $idx => $gwCandidate) {
                 try {
                     $service = new UnipayService($gwCandidate);
@@ -678,6 +693,12 @@ class PaymentController extends Controller
                     }
                     break; // Success — stop trying.
                 } catch (UnipayException $e) {
+                    // 5xx pode significar que a gateway processou a cobrança e
+                    // falhou apenas ao responder. Nunca tente outra gateway.
+                    if (($e->statusCode ?? 500) >= 500) {
+                        throw $e;
+                    }
+
                     $lastError = $e;
                     Log::warning('Gateway falhou, tentando próximo fallback', [
                         'order_id' => $order->id,
@@ -689,16 +710,20 @@ class PaymentController extends Controller
                         'message' => $e->getMessage(),
                     ]);
                     continue;
-                } catch (\Throwable $e) {
-                    $lastError = $e;
-                    Log::warning('Gateway falhou (erro inesperado), tentando próximo fallback', [
+                } catch (ConnectionException $e) {
+                    Log::critical('Resposta da gateway é incerta; fallback bloqueado para evitar cobrança duplicada.', [
                         'order_id' => $order->id,
                         'gateway_id' => $gwCandidate->id,
                         'provider' => $gwCandidate->provider,
                         'attempt' => $idx + 1,
                         'message' => $e->getMessage(),
                     ]);
-                    continue;
+
+                    throw $e;
+                } catch (\Throwable $e) {
+                    // Depois de iniciar o POST, qualquer exceção inesperada é
+                    // tratada como ambígua pelo middleware de idempotência.
+                    throw $e;
                 }
             }
 
@@ -754,6 +779,7 @@ class PaymentController extends Controller
         $transactionId = $result['id'] ?? $result['data']['id'] ?? null;
         if ($transactionId) {
             $updateData['gateway_transaction_id'] = (string) $transactionId;
+            app(PaymentIdempotencyService::class)->attachGatewayTransaction($request, (string) $transactionId);
         }
 
         $returnedStatus = $result['status'] ?? $result['data']['status'] ?? null;
@@ -1067,6 +1093,7 @@ class PaymentController extends Controller
 
             // Transicionou para pago agora → marca o pedido Shopify como paid.
             $freshOrder = $order->fresh();
+            app(PaymentIdempotencyService::class)->resolveFromOrder($freshOrder);
             if ($freshOrder->isPaid() && $previousStatus !== Order::STATUS_PAID) {
                 $this->syncShopifyPaidIfPaid($freshOrder->store, $freshOrder);
                 AbandonedCartController::markConvertedByOrder($freshOrder);

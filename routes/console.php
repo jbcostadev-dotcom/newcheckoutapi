@@ -25,3 +25,7 @@ Schedule::command('domains:sync-cloudflare')
 Schedule::command('domains:sync-cloudflare --include-active')
     ->hourly()
     ->withoutOverlapping();
+
+Schedule::command('payments:idempotency-maintain')
+    ->everyMinute()
+    ->withoutOverlapping();

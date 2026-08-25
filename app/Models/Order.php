@@ -107,7 +107,12 @@ class Order extends Model
 
     public function hasUpsellDecided(): bool
     {
-        return $this->upsell_status !== null;
+        return in_array($this->upsell_status, ['accepted', 'declined'], true);
+    }
+
+    public function isUpsellProcessing(): bool
+    {
+        return $this->upsell_status === 'processing';
     }
 
     /**
