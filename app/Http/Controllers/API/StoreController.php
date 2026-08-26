@@ -7,6 +7,7 @@ use App\Models\Store;
 use App\Services\Ssl\CloudflareCustomHostnameService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class StoreController extends Controller
@@ -26,7 +27,7 @@ class StoreController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'type' => 'required|string|max:255',
+            'type' => ['required', 'string', Rule::in(Store::TYPES)],
             'subdomain' => 'nullable|string|max:255|unique:stores,subdomain',
         ]);
 
@@ -78,7 +79,7 @@ class StoreController extends Controller
 
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
-            'type' => 'sometimes|required|string|max:255',
+            'type' => ['sometimes', 'required', 'string', Rule::in(Store::TYPES)],
             'subdomain' => 'sometimes|required|string|max:255|unique:stores,subdomain,' . $store->id,
             'status' => 'boolean'
         ]);

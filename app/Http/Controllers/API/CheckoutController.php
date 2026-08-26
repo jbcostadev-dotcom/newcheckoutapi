@@ -599,23 +599,25 @@ class CheckoutController extends Controller
             ];
         }
 
-        $shippingMethods = $store->shippingMethods()
-            ->where('is_active', true)
-            ->orderBy('price', 'asc')
-            ->get()
-            ->map(function ($method) {
-                return [
-                    'id' => $method->id,
-                    'name' => $method->name,
-                    'price' => $method->price ? round((float) $method->price, 2) : null,
-                    'min_value_free_shipping' => $method->min_value_free_shipping
-                        ? round((float) $method->min_value_free_shipping, 2)
-                        : null,
-                    'min_delivery_days' => (int) $method->min_delivery_days,
-                    'max_delivery_days' => (int) $method->max_delivery_days,
-                    'icon' => $method->icon,
-                ];
-            });
+        $shippingMethods = $store->requiresShipping()
+            ? $store->shippingMethods()
+                ->where('is_active', true)
+                ->orderBy('price', 'asc')
+                ->get()
+                ->map(function ($method) {
+                    return [
+                        'id' => $method->id,
+                        'name' => $method->name,
+                        'price' => $method->price ? round((float) $method->price, 2) : null,
+                        'min_value_free_shipping' => $method->min_value_free_shipping
+                            ? round((float) $method->min_value_free_shipping, 2)
+                            : null,
+                        'min_delivery_days' => (int) $method->min_delivery_days,
+                        'max_delivery_days' => (int) $method->max_delivery_days,
+                        'icon' => $method->icon,
+                    ];
+                })
+            : collect();
 
         $effectiveSettings = $store->checkoutSettings ?? $this->defaultSettings();
 
@@ -625,6 +627,7 @@ class CheckoutController extends Controller
                 'store' => [
                     'id' => $store->id,
                     'name' => $store->name,
+                    'type' => $store->normalizedType(),
                     'settings' => $effectiveSettings,
                     'google_ads' => $this->buildGoogleAdsBlock($store),
                     'meta_pixel' => $this->buildMetaPixelBlock($store),
@@ -643,7 +646,9 @@ class CheckoutController extends Controller
                 'total' => round($total, 2),
                 'shipping_methods' => $shippingMethods,
                 'order_bumps' => $this->buildOrderBumps($store, $uniqueIds, $effectiveSettings),
-                'gifts' => $this->buildGifts($store, $uniqueIds),
+                'gifts' => $store->supportsGifts()
+                    ? $this->buildGifts($store, $uniqueIds)
+                    : [],
                 'social_proofs' => $store->socialProofs()
                     ->where('is_active', true)
                     ->orderBy('sort_order')
@@ -689,23 +694,25 @@ class CheckoutController extends Controller
             ],
         ];
 
-        $shippingMethods = $store->shippingMethods()
-            ->where('is_active', true)
-            ->orderBy('price', 'asc')
-            ->get()
-            ->map(function ($method) {
-                return [
-                    'id' => $method->id,
-                    'name' => $method->name,
-                    'price' => $method->price ? round((float) $method->price, 2) : null,
-                    'min_value_free_shipping' => $method->min_value_free_shipping
-                        ? round((float) $method->min_value_free_shipping, 2)
-                        : null,
-                    'min_delivery_days' => (int) $method->min_delivery_days,
-                    'max_delivery_days' => (int) $method->max_delivery_days,
-                    'icon' => $method->icon,
-                ];
-            });
+        $shippingMethods = $store->requiresShipping()
+            ? $store->shippingMethods()
+                ->where('is_active', true)
+                ->orderBy('price', 'asc')
+                ->get()
+                ->map(function ($method) {
+                    return [
+                        'id' => $method->id,
+                        'name' => $method->name,
+                        'price' => $method->price ? round((float) $method->price, 2) : null,
+                        'min_value_free_shipping' => $method->min_value_free_shipping
+                            ? round((float) $method->min_value_free_shipping, 2)
+                            : null,
+                        'min_delivery_days' => (int) $method->min_delivery_days,
+                        'max_delivery_days' => (int) $method->max_delivery_days,
+                        'icon' => $method->icon,
+                    ];
+                })
+            : collect();
 
         $effectiveSettings = $store->checkoutSettings ?? $this->defaultSettings();
 
@@ -713,6 +720,7 @@ class CheckoutController extends Controller
             'store' => [
                 'id' => $store->id,
                 'name' => $store->name,
+                'type' => $store->normalizedType(),
                 'settings' => $effectiveSettings,
                 'google_ads' => $this->buildGoogleAdsBlock($store),
                 'meta_pixel' => $this->buildMetaPixelBlock($store),
@@ -732,7 +740,7 @@ class CheckoutController extends Controller
             'preview' => true,
             'shipping_methods' => $shippingMethods,
             'order_bumps' => $this->buildPreviewOrderBumps($effectiveSettings),
-            'gifts' => $this->buildPreviewGift(),
+            'gifts' => $store->supportsGifts() ? $this->buildPreviewGift() : [],
             'social_proofs' => $store->socialProofs()
                 ->where('is_active', true)
                 ->orderBy('sort_order')

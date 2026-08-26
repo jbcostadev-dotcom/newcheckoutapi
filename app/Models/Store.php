@@ -8,6 +8,20 @@ use Illuminate\Support\Str;
 
 class Store extends Model
 {
+    public const TYPE_SHOPIFY = 'Shopify';
+
+    public const TYPE_LANDING_PHYSICAL = 'Landing Page - Produto Físico';
+
+    public const TYPE_LANDING_DIGITAL = 'Landing Page - Produto Digital';
+
+    public const LEGACY_TYPE_LANDING = 'Landing Page';
+
+    public const TYPES = [
+        self::TYPE_SHOPIFY,
+        self::TYPE_LANDING_PHYSICAL,
+        self::TYPE_LANDING_DIGITAL,
+    ];
+
     protected $fillable = [
         'user_id',
         'name',
@@ -244,6 +258,33 @@ class Store extends Model
     public function isShopifyConnected(): bool
     {
         return !empty($this->shopify_domain) && !empty($this->shopify_access_token);
+    }
+
+    public function normalizedType(): string
+    {
+        return $this->type === self::LEGACY_TYPE_LANDING
+            ? self::TYPE_LANDING_PHYSICAL
+            : ($this->type ?: self::TYPE_SHOPIFY);
+    }
+
+    public function isShopifyStore(): bool
+    {
+        return $this->normalizedType() === self::TYPE_SHOPIFY;
+    }
+
+    public function isDigitalStore(): bool
+    {
+        return $this->normalizedType() === self::TYPE_LANDING_DIGITAL;
+    }
+
+    public function requiresShipping(): bool
+    {
+        return ! $this->isDigitalStore();
+    }
+
+    public function supportsGifts(): bool
+    {
+        return ! $this->isDigitalStore();
     }
 
     /**

@@ -76,12 +76,12 @@ class PaymentController extends Controller
             'card_brand' => 'nullable|string|max:30',
             'card_last4' => 'nullable|string|max:4',
             'shipping_method_id' => 'nullable|integer',
-            'shipping_address' => 'required|array',
-            'shipping_address.cep' => 'required|string|min:8|max:9',
-            'shipping_address.logradouro' => 'required|string|min:3|max:255',
-            'shipping_address.numero' => 'required|string|min:1|max:30',
+            'shipping_address' => 'nullable|array',
+            'shipping_address.cep' => 'nullable|string|min:8|max:9',
+            'shipping_address.logradouro' => 'nullable|string|min:3|max:255',
+            'shipping_address.numero' => 'nullable|string|min:1|max:30',
             'shipping_address.complemento' => 'nullable|string|max:120',
-            'shipping_address.bairro' => 'required|string|min:2|max:120',
+            'shipping_address.bairro' => 'nullable|string|min:2|max:120',
             'shipping_address.cidade' => 'nullable|string|max:120',
             'shipping_address.uf' => 'nullable|string|max:2',
             'order_bump_id' => 'nullable|integer',
@@ -120,6 +120,20 @@ class PaymentController extends Controller
 
         if (! $store) {
             return response()->json(['error' => 'Store not found or inactive'], 404);
+        }
+
+        if ($store->requiresShipping()) {
+            $request->validate([
+                'shipping_address' => 'required|array',
+                'shipping_address.cep' => 'required|string|min:8|max:9',
+                'shipping_address.logradouro' => 'required|string|min:3|max:255',
+                'shipping_address.numero' => 'required|string|min:1|max:30',
+                'shipping_address.bairro' => 'required|string|min:2|max:120',
+            ]);
+        } else {
+            $validated['shipping_method_id'] = null;
+            $validated['shipping_address'] = [];
+            $validated['gift_selections'] = [];
         }
 
         // IP e user-agent são obtidos no servidor para melhorar o Event Match
@@ -429,7 +443,9 @@ class PaymentController extends Controller
         }
 
         // Calcula valor do frete.
-        $shippingMethodId = $validated['shipping_method_id'] ?? null;
+        $shippingMethodId = $store->requiresShipping()
+            ? ($validated['shipping_method_id'] ?? null)
+            : null;
         $shippingPrice = null;
 
         if ($shippingMethodId) {
@@ -898,7 +914,7 @@ class PaymentController extends Controller
      */
     public function getOrderConfirmed(int $orderId)
     {
-        $order = Order::with(['items.product:id,name,image_url,product_type,vendor,sku,parent_title', 'store:id,name', 'shippingMethod:id,name'])
+        $order = Order::with(['items.product:id,name,image_url,product_type,vendor,sku,parent_title', 'store:id,name,type', 'shippingMethod:id,name'])
             ->find($orderId);
 
         if (! $order) {
@@ -942,6 +958,8 @@ class PaymentController extends Controller
             $installmentLabel = $order->installments . 'x de R$ ' . number_format($total / $order->installments, 2, ',', '.');
         }
 
+        $isDigitalOrder = $order->store?->isDigitalStore() ?? false;
+
         return response()->json([
             'order_id' => $order->id,
             'status' => $order->status,
@@ -966,11 +984,14 @@ class PaymentController extends Controller
             ],
             'shipping_method' => $order->shippingMethod?->name,
             'shipping_price' => $shippingPrice,
-            'shipping_label' => $shippingPrice === 0 ? 'Frete grátis' : 'R$ ' . number_format($shippingPrice, 2, ',', '.'),
+            'shipping_label' => $isDigitalOrder
+                ? 'Entrega digital'
+                : ($shippingPrice === 0 ? 'Frete grátis' : 'R$ ' . number_format($shippingPrice, 2, ',', '.')),
             'items' => $items,
             'subtotal' => $subtotal,
             'total' => $total,
             'store_name' => $order->store?->name,
+            'store_type' => $order->store?->normalizedType(),
             'created_at' => $order->created_at?->toISOString(),
         ]);
     }
