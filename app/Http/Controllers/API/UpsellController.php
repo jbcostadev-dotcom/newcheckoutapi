@@ -18,9 +18,70 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 
 class UpsellController extends Controller
 {
+    /** Authorize a short-lived, read-only preview without sharing the owner's login token. */
+    public function previewLink(Request $request, string $storeId)
+    {
+        $store = $request->user()->stores()->findOrFail($storeId);
+        $validated = $request->validate(['offer_type' => 'required|in:upsell,downsell']);
+        abort_unless($store->upsells()->ofType($validated['offer_type'])->whereHas('product')->exists(), 404);
+
+        $url = URL::temporarySignedRoute('checkout.offer-preview', now()->addMinutes(30), [
+            'store_id' => $store->id,
+            'offer_type' => $validated['offer_type'],
+        ], false);
+
+        return response()->json([
+            'store' => $store->only(['id', 'custom_domain']),
+            'preview_query' => parse_url($url, PHP_URL_QUERY),
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
+    /** This signed endpoint only presents offers: it never creates or reads an order. */
+    public function preview(Request $request)
+    {
+        $validated = $request->validate([
+            'store_id' => 'required|integer',
+            'offer_type' => 'required|in:upsell,downsell',
+        ]);
+        $store = Store::findOrFail($validated['store_id']);
+        $offers = $store->upsells()->ofType($validated['offer_type'])
+            ->whereHas('product')->with('product')->latest()->get();
+
+        return response()->json([
+            'preview' => true,
+            'store' => $store->only(['id', 'name']),
+            'offers' => $offers->map(fn (Upsell $offer) => [
+                ...$this->formatUpsellOffer($offer),
+                'is_active' => $offer->is_active,
+                'payment_methods' => array_values(array_filter([
+                    $offer->show_credit_card ? 'credit_card' : null,
+                    $offer->show_pix ? 'pix' : null,
+                    $offer->show_boleto ? 'boleto' : null,
+                ])),
+            ]),
+            'settings' => $this->offerSettings($store),
+            'installment_config' => $this->buildInstallmentConfig($store, null),
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
+    private function offerSettings(Store $store): array
+    {
+        return $store->checkoutSettings?->only([
+            'primary_color', 'dark_mode', 'logo_url', 'banner_url', 'banner_height', 'banner_message',
+            'header_store_name_visible', 'header_secure_badge', 'header_logo_alignment',
+            'header_bg_color', 'header_icon_color', 'font_family', 'font_size_base',
+            'announcement_bar_enabled', 'announcement_bar_bg', 'announcement_bar_text_color',
+            'upsell_bg_color', 'upsell_border_color', 'upsell_text_color',
+            'upsell_button_color', 'upsell_button_text_color',
+            'downsell_bg_color', 'downsell_border_color', 'downsell_text_color',
+            'downsell_button_color', 'downsell_button_text_color',
+        ]) ?? [];
+    }
+
     /**
      * Listar upsells da loja.
      */
@@ -182,16 +243,7 @@ class UpsellController extends Controller
             'has_downsell' => $offerType === 'downsell' && $upsell !== null,
             'offer_type' => $upsell ? $offerType : null,
             'upsell' => $upsell ? $this->formatUpsellOffer($upsell) : null,
-            'settings' => $store->checkoutSettings?->only([
-                'primary_color', 'dark_mode', 'logo_url', 'banner_url', 'banner_height', 'banner_message',
-                'header_store_name_visible', 'header_secure_badge', 'header_logo_alignment',
-                'header_bg_color', 'header_icon_color', 'font_family', 'font_size_base',
-                'announcement_bar_enabled', 'announcement_bar_bg', 'announcement_bar_text_color',
-                'upsell_bg_color', 'upsell_border_color', 'upsell_text_color',
-                'upsell_button_color', 'upsell_button_text_color',
-                'downsell_bg_color', 'downsell_border_color', 'downsell_text_color',
-                'downsell_button_color', 'downsell_button_text_color',
-            ]) ?? [],
+            'settings' => $this->offerSettings($store),
             'order' => [
                 'id' => $order->id,
                 'payment_method' => $order->payment_method,

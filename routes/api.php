@@ -69,6 +69,8 @@ Route::post('/webhook/unipay', [PaymentController::class, 'webhook']);
 
 // Upsell público
 Route::get('/checkout/upsell', [UpsellController::class, 'getOffer']);
+Route::get('/checkout/offer-preview', [UpsellController::class, 'preview'])
+    ->middleware(['signed:relative', 'throttle:60,1'])->name('checkout.offer-preview');
 Route::post('/checkout/upsell/charge', [UpsellController::class, 'charge'])
     ->middleware('payment.idempotency:upsell');
 Route::post('/checkout/downsell/charge', [UpsellController::class, 'chargeDownsell'])
@@ -214,6 +216,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Upsells
     Route::get('stores/{store}/upsells', [UpsellController::class, 'index']);
+    Route::get('stores/{store}/upsells/preview-link', [UpsellController::class, 'previewLink']);
     Route::post('stores/{store}/upsells', [UpsellController::class, 'store']);
     Route::put('stores/{store}/upsells/{upsell}', [UpsellController::class, 'update']);
     Route::delete('stores/{store}/upsells/{upsell}', [UpsellController::class, 'destroy']);
