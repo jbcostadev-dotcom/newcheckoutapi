@@ -42,17 +42,21 @@ class Order extends Model
         'shipping_complemento', 'shipping_bairro', 'shipping_cidade', 'shipping_uf',
         'shipping_method_id', 'shipping_price',
         'upsell_id', 'upsell_amount', 'upsell_status', 'upsell_product_id',
+        'downsell_id', 'downsell_amount', 'downsell_status', 'downsell_product_id',
+        'post_purchase_pix_transaction_id', 'post_purchase_pix',
         'tracking_parameters',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'upsell_amount' => 'decimal:2',
+        'downsell_amount' => 'decimal:2',
         'shipping_price' => 'decimal:2',
         'installments' => 'integer',
         'customer_state_registration_exempt' => 'boolean',
         'gateway_expires_at' => 'datetime',
         'tracking_parameters' => 'array',
+        'post_purchase_pix' => 'array',
     ];
 
     public function store()
@@ -90,6 +94,16 @@ class Order extends Model
         return $this->belongsTo(Product::class, 'upsell_product_id');
     }
 
+    public function downsell()
+    {
+        return $this->belongsTo(Upsell::class, 'downsell_id');
+    }
+
+    public function downsellProduct()
+    {
+        return $this->belongsTo(Product::class, 'downsell_product_id');
+    }
+
     public function isPaid(): bool
     {
         return $this->status === self::STATUS_PAID;
@@ -113,6 +127,16 @@ class Order extends Model
     public function isUpsellProcessing(): bool
     {
         return $this->upsell_status === 'processing';
+    }
+
+    public function hasDownsellDecided(): bool
+    {
+        return in_array($this->downsell_status, ['accepted', 'declined'], true);
+    }
+
+    public function isDownsellProcessing(): bool
+    {
+        return $this->downsell_status === 'processing';
     }
 
     /**

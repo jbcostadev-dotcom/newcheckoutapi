@@ -18,7 +18,11 @@ class EnsurePaymentIdempotency
 
     public function handle(Request $request, Closure $next, string $scope): Response
     {
-        if (! in_array($scope, [PaymentIdempotency::SCOPE_CHECKOUT, PaymentIdempotency::SCOPE_UPSELL], true)) {
+        if (! in_array($scope, [
+            PaymentIdempotency::SCOPE_CHECKOUT,
+            PaymentIdempotency::SCOPE_UPSELL,
+            PaymentIdempotency::SCOPE_DOWNSELL,
+        ], true)) {
             return response()->json(['error' => 'invalid_idempotency_scope'], 500);
         }
 

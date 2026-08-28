@@ -71,6 +71,8 @@ Route::post('/webhook/unipay', [PaymentController::class, 'webhook']);
 Route::get('/checkout/upsell', [UpsellController::class, 'getOffer']);
 Route::post('/checkout/upsell/charge', [UpsellController::class, 'charge'])
     ->middleware('payment.idempotency:upsell');
+Route::post('/checkout/downsell/charge', [UpsellController::class, 'chargeDownsell'])
+    ->middleware('payment.idempotency:downsell');
 Route::post('/checkout/upsell/decline', [UpsellController::class, 'decline']);
 
 // Shopify checkout redirect (público — chamado pelo snippet injetado no tema)

@@ -10,6 +10,8 @@ class PaymentIdempotency extends Model
 
     public const SCOPE_UPSELL = 'upsell';
 
+    public const SCOPE_DOWNSELL = 'downsell';
+
     public const STATE_RESERVED = 'reserved';
 
     public const STATE_PROCESSING = 'processing';

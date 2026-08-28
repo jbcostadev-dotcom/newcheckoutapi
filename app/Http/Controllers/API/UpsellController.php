@@ -11,6 +11,7 @@ use App\Models\Store;
 use App\Models\Upsell;
 use App\Services\GatewayResolverService;
 use App\Services\PaymentIdempotencyService;
+use App\Services\PostPurchasePixService;
 use App\Services\ShopifyOrderSync;
 use App\Services\UnipayService;
 use Illuminate\Http\Request;
@@ -43,6 +44,7 @@ class UpsellController extends Controller
         $store = $request->user()->stores()->findOrFail($storeId);
 
         $validated = $request->validate([
+            'offer_type' => 'sometimes|in:upsell,downsell',
             'name' => 'required|string|max:255',
             'product_id' => 'required|integer|exists:products,id',
             'discount_value' => 'required|numeric|min:0',
@@ -89,6 +91,7 @@ class UpsellController extends Controller
         $upsell = $store->upsells()->findOrFail($upsellId);
 
         $validated = $request->validate([
+            'offer_type' => 'sometimes|in:upsell,downsell',
             'name' => 'sometimes|required|string|max:255',
             'product_id' => 'sometimes|required|integer|exists:products,id',
             'discount_value' => 'sometimes|required|numeric|min:0',
@@ -166,24 +169,29 @@ class UpsellController extends Controller
             return response()->json(['error' => 'Order is not approved'], 400);
         }
 
-        if ($order->hasUpsellDecided()) {
-            return response()->json([
-                'has_upsell' => false,
-                'upsell' => null,
-                'order' => [
-                    'id' => $order->id,
-                    'payment_method' => $order->payment_method,
-                    'card_brand' => $order->card_brand,
-                    'card_last4' => $order->card_last4,
-                ],
-            ]);
-        }
-
-        $upsell = $this->findApplicableUpsell($order, $store);
+        $offerType = $order->upsell_status === 'declined' ? 'downsell' : 'upsell';
+        $offerAlreadyFinished = $offerType === 'upsell'
+            ? $order->upsell_status === 'accepted'
+            : $order->hasDownsellDecided();
+        $upsell = $offerAlreadyFinished
+            ? null
+            : $this->findApplicableOffer($order, $store, $offerType);
 
         return response()->json([
             'has_upsell' => $upsell !== null,
+            'has_downsell' => $offerType === 'downsell' && $upsell !== null,
+            'offer_type' => $upsell ? $offerType : null,
             'upsell' => $upsell ? $this->formatUpsellOffer($upsell) : null,
+            'settings' => $store->checkoutSettings?->only([
+                'primary_color', 'dark_mode', 'logo_url', 'banner_url', 'banner_height', 'banner_message',
+                'header_store_name_visible', 'header_secure_badge', 'header_logo_alignment',
+                'header_bg_color', 'header_icon_color', 'font_family', 'font_size_base',
+                'announcement_bar_enabled', 'announcement_bar_bg', 'announcement_bar_text_color',
+                'upsell_bg_color', 'upsell_border_color', 'upsell_text_color',
+                'upsell_button_color', 'upsell_button_text_color',
+                'downsell_bg_color', 'downsell_border_color', 'downsell_text_color',
+                'downsell_button_color', 'downsell_button_text_color',
+            ]) ?? [],
             'order' => [
                 'id' => $order->id,
                 'payment_method' => $order->payment_method,
@@ -200,6 +208,19 @@ class UpsellController extends Controller
      * Endpoint público: processa a cobrança do upsell.
      */
     public function charge(Request $request)
+    {
+        return $this->chargeOffer($request, 'upsell');
+    }
+
+    /**
+     * Endpoint público: processa a cobrança do downsell.
+     */
+    public function chargeDownsell(Request $request)
+    {
+        return $this->chargeOffer($request, 'downsell');
+    }
+
+    private function chargeOffer(Request $request, string $offerType)
     {
         $validated = $request->validate([
             'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
@@ -226,15 +247,20 @@ class UpsellController extends Controller
             return response()->json(['error' => 'Order is not approved'], 400);
         }
 
-        if ($order->hasUpsellDecided()) {
+        if ($offerType === 'downsell' && $order->upsell_status !== 'declined') {
+            return response()->json(['error' => 'Downsell is only available after declining the upsell'], 422);
+        }
+
+        if ($this->hasOfferDecided($order, $offerType)) {
             return response()->json([
-                'success' => $order->upsell_status === 'accepted',
-                'message' => 'Upsell já foi processado para este pedido.',
+                'success' => $this->offerStatus($order, $offerType) === 'accepted',
+                'message' => ucfirst($offerType) . ' já foi processado para este pedido.',
             ]);
         }
 
         $upsell = Upsell::where('id', $validated['upsell_id'])
             ->where('store_id', $store->id)
+            ->ofType($offerType)
             ->active()
             ->with('product')
             ->first();
@@ -269,18 +295,31 @@ class UpsellController extends Controller
             }
         }
 
-        $claimed = DB::transaction(function () use ($order) {
+        $statusColumn = $this->offerStatusColumn($offerType);
+        app(PaymentIdempotencyService::class)->attachOrder($request, $order);
+        $claimStatus = DB::transaction(function () use ($order, $offerType, $statusColumn) {
             $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
-            if ($lockedOrder->hasUpsellDecided() || $lockedOrder->isUpsellProcessing()) {
-                return false;
+            if (!$lockedOrder->isApproved() || ($offerType === 'downsell' && $lockedOrder->upsell_status !== 'declined')) {
+                return 'unavailable';
+            }
+            if ($this->hasOfferDecided($lockedOrder, $offerType) || $this->isOfferProcessing($lockedOrder, $offerType)) {
+                return $this->offerStatus($lockedOrder, $offerType);
             }
 
-            $lockedOrder->update(['upsell_status' => 'processing']);
+            $lockedOrder->update([$statusColumn => 'processing']);
 
-            return true;
+            return 'claimed';
         });
 
-        if (! $claimed) {
+        if ($claimStatus === 'unavailable' || $claimStatus === 'declined') {
+            return response()->json(['success' => false, 'message' => 'Esta oferta não está mais disponível.'], 422);
+        }
+
+        if ($claimStatus === 'accepted') {
+            return response()->json(['success' => true, 'message' => 'Esta oferta já foi processada.']);
+        }
+
+        if ($claimStatus === 'processing') {
             return response()->json([
                 'success' => false,
                 'order_id' => $order->id,
@@ -290,7 +329,6 @@ class UpsellController extends Controller
             ], 202, ['Retry-After' => '2']);
         }
 
-        app(PaymentIdempotencyService::class)->attachOrder($request, $order);
         app(PaymentIdempotencyService::class)->markGatewayStarted($request, $order);
 
         try {
@@ -302,24 +340,27 @@ class UpsellController extends Controller
                 $response = response()->json(['error' => 'Payment method not supported for upsell'], 400);
             }
 
-            if ($response->getStatusCode() >= 400) {
+            if ($response->getStatusCode() >= 400 && $response->getStatusCode() < 500) {
                 Order::whereKey($order->id)
-                    ->where('upsell_status', 'processing')
-                    ->update(['upsell_status' => null]);
+                    ->where($statusColumn, 'processing')
+                    ->update([$statusColumn => null]);
             }
 
             return $response;
         } catch (\Throwable $e) {
-            Log::error('Erro ao processar upsell', [
+            // Um erro após iniciar a gateway pode representar uma cobrança em andamento.
+            // Mantenha o bloqueio até a reconciliação da intenção de pagamento.
+            Log::error('Erro ao processar oferta adicional', [
                 'order_id' => $order->id,
                 'upsell_id' => $upsell->id,
+                'offer_type' => $offerType,
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Erro ao processar o upsell: ' . $e->getMessage(),
+                'message' => 'Não foi possível confirmar a cobrança da oferta. Aguarde a confirmação.',
             ], 500);
         }
     }
@@ -333,6 +374,7 @@ class UpsellController extends Controller
             'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
             'domain' => 'nullable|string|max:255|required_without:store_id',
             'order_id' => 'required|integer|exists:orders,id',
+            'offer_type' => 'sometimes|in:upsell,downsell',
         ]);
 
         $identifier = $validated['store_id'] ?? $validated['domain'];
@@ -341,34 +383,51 @@ class UpsellController extends Controller
             return response()->json(['error' => 'Store not found'], 404);
         }
 
-        $order = Order::where('id', $validated['order_id'])
-            ->where('store_id', $store->id)
-            ->firstOrFail();
+        $offerType = $validated['offer_type'] ?? 'upsell';
+        return DB::transaction(function () use ($validated, $store, $offerType) {
+            $order = Order::where('id', $validated['order_id'])
+                ->where('store_id', $store->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        if ($order->hasUpsellDecided()) {
-            return response()->json(['success' => true, 'message' => 'Upsell already decided']);
-        }
+            if (!$order->isApproved()) {
+                return response()->json(['error' => 'Order is not approved'], 400);
+            }
 
-        if ($order->isUpsellProcessing()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'A cobrança da oferta ainda está sendo confirmada.',
-            ], 409);
-        }
+            if ($offerType === 'downsell' && $order->upsell_status !== 'declined') {
+                return response()->json(['error' => 'Downsell is only available after declining the upsell'], 422);
+            }
 
-        $order->update(['upsell_status' => 'declined']);
+            if ($this->hasOfferDecided($order, $offerType)) {
+                return response()->json(['success' => true, 'message' => ucfirst($offerType) . ' already decided']);
+            }
 
-        return response()->json(['success' => true]);
+            if ($this->isOfferProcessing($order, $offerType)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A cobrança da oferta ainda está sendo confirmada.',
+                ], 409);
+            }
+
+            if (!$this->findApplicableOffer($order, $store, $offerType)) {
+                return response()->json(['error' => 'No applicable offer to decline'], 422);
+            }
+
+            $order->update([$this->offerStatusColumn($offerType) => 'declined']);
+
+            return response()->json(['success' => true]);
+        });
     }
 
     /**
-     * Busca um upsell ativo aplicável ao pedido.
+     * Busca uma oferta ativa aplicável ao pedido.
      */
-    private function findApplicableUpsell(Order $order, Store $store): ?Upsell
+    private function findApplicableOffer(Order $order, Store $store, string $offerType): ?Upsell
     {
         $paymentMethod = $order->payment_method;
 
         $query = $store->upsells()
+            ->ofType($offerType)
             ->active()
             ->where(function ($q) use ($paymentMethod) {
                 if ($paymentMethod === 'credit_card') {
@@ -390,6 +449,26 @@ class UpsellController extends Controller
         }
 
         return null;
+    }
+
+    private function offerStatusColumn(string $offerType): string
+    {
+        return $offerType === 'downsell' ? 'downsell_status' : 'upsell_status';
+    }
+
+    private function offerStatus(Order $order, string $offerType): ?string
+    {
+        return $offerType === 'downsell' ? $order->downsell_status : $order->upsell_status;
+    }
+
+    private function hasOfferDecided(Order $order, string $offerType): bool
+    {
+        return in_array($this->offerStatus($order, $offerType), ['accepted', 'declined'], true);
+    }
+
+    private function isOfferProcessing(Order $order, string $offerType): bool
+    {
+        return $this->offerStatus($order, $offerType) === 'processing';
     }
 
     /**
@@ -525,6 +604,7 @@ class UpsellController extends Controller
 
         return [
             'id' => $upsell->id,
+            'offer_type' => $upsell->offer_type,
             'name' => $upsell->name,
             'product_id' => $upsell->product_id,
             'discount_value' => $upsell->discount_value,
@@ -584,7 +664,7 @@ class UpsellController extends Controller
         );
         $finalPrice = $this->applyInstallmentInterest($primaryGateway, $finalPrice, $installments);
 
-        $payload = $this->buildUpsellCardPayload($order, $finalPrice, $installments);
+        $payload = $this->buildUpsellCardPayload($order, $finalPrice, $installments, $upsell->offer_type);
         $result = null;
         $lastError = null;
         $usedGateway = null;
@@ -659,7 +739,7 @@ class UpsellController extends Controller
             ], 400);
         }
 
-        $payload = $this->buildUpsellPixPayload($order, $finalPrice);
+        $payload = $this->buildUpsellPixPayload($order, $finalPrice, $upsell->offer_type);
         $result = null;
         $lastError = null;
         $usedGateway = null;
@@ -708,17 +788,14 @@ class UpsellController extends Controller
             ], 422);
         }
 
-        $this->applyUpsellToOrder($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway, $result);
+        $response = app(PostPurchasePixService::class)->stage(
+            $order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway, $result
+        );
 
         $transactionId = $result['id'] ?? $result['data']['id'] ?? null;
         app(PaymentIdempotencyService::class)->attachGatewayTransaction($request, $transactionId ? (string) $transactionId : null);
 
-        return response()->json([
-            'success' => true,
-            'pix_qrcode' => $order->pix_qrcode,
-            'pix_copia_cola' => $order->pix_copia_cola,
-            'gateway_expires_at' => $order->gateway_expires_at?->toISOString(),
-        ]);
+        return response()->json($response);
     }
 
     /**
@@ -730,12 +807,14 @@ class UpsellController extends Controller
         Product $variantProduct,
         float $finalPrice,
         ?array $variantAttributes,
-        $usedGateway,
-        ?array $gatewayResult = null
+        $usedGateway
     ): void {
-        $item = DB::transaction(function () use ($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway, $gatewayResult) {
+        $offerType = $upsell->offer_type === 'downsell' ? 'downsell' : 'upsell';
+        $item = DB::transaction(function () use ($order, $upsell, $variantProduct, $finalPrice, $variantAttributes, $usedGateway) {
             $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
-            if ($lockedOrder->upsell_status === 'accepted') {
+            $offerType = $upsell->offer_type === 'downsell' ? 'downsell' : 'upsell';
+            $statusColumn = $this->offerStatusColumn($offerType);
+            if ($lockedOrder->{$statusColumn} === 'accepted') {
                 return null;
             }
 
@@ -750,32 +829,12 @@ class UpsellController extends Controller
 
             $updateData = [
                 'amount' => round((float) $lockedOrder->amount + $finalPrice, 2),
-                'upsell_id' => $upsell->id,
-                'upsell_amount' => $finalPrice,
-                'upsell_status' => 'accepted',
-                'upsell_product_id' => $variantProduct->id,
-                'gateway_id' => $usedGateway->id,
+                "{$offerType}_id" => $upsell->id,
+                "{$offerType}_amount" => $finalPrice,
+                $statusColumn => 'accepted',
+                "{$offerType}_product_id" => $variantProduct->id,
+                'gateway_id' => $usedGateway?->id ?? $lockedOrder->gateway_id,
             ];
-
-            if ($gatewayResult && $lockedOrder->payment_method === 'pix') {
-                $pixData = $gatewayResult['pix'] ?? $gatewayResult['data']['pix'] ?? null;
-                if (is_array($pixData)) {
-                    $updateData['pix_copia_cola'] = $pixData['qrcode'] ?? $pixData['copyPaste'] ?? null;
-                }
-                $updateData['gateway_transaction_id'] = $gatewayResult['id'] ?? $gatewayResult['transaction_id'] ?? null;
-
-                $expiresAt = null;
-                if (is_array($pixData) && !empty($pixData['expirationDate'])) {
-                    $expiresAt = $pixData['expirationDate'];
-                } elseif (!empty($gatewayResult['expiration_date'])) {
-                    $expiresAt = $gatewayResult['expiration_date'];
-                } elseif (!empty($gatewayResult['expires_at'])) {
-                    $expiresAt = $gatewayResult['expires_at'];
-                }
-                if ($expiresAt) {
-                    $updateData['gateway_expires_at'] = $expiresAt;
-                }
-            }
 
             $lockedOrder->update($updateData);
 
@@ -795,9 +854,10 @@ class UpsellController extends Controller
                 app(ShopifyOrderSync::class)->syncExtraItem($store, $order->fresh(), $item);
             }
         } catch (\Throwable $e) {
-            Log::warning('Shopify sync do upsell falhou', [
+            Log::warning('Shopify sync da oferta adicional falhou', [
                 'order_id' => $order->id,
-                'upsell_id' => $upsell->id,
+                'offer_id' => $upsell->id,
+                'offer_type' => $offerType,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -808,7 +868,7 @@ class UpsellController extends Controller
     /**
      * Monta payload de cobrança de upsell no cartão.
      */
-    private function buildUpsellCardPayload(Order $order, float $amount, int $installments = 1): array
+    private function buildUpsellCardPayload(Order $order, float $amount, int $installments = 1, string $offerType = 'upsell'): array
     {
         return [
             'transaction_type' => 'credit_card',
@@ -820,7 +880,7 @@ class UpsellController extends Controller
                 'document' => $order->customer_document,
                 'phone' => $order->customer_phone,
             ],
-            'description' => 'Upsell - Pedido #' . $order->id,
+            'description' => ucfirst($offerType) . ' - Pedido #' . $order->id,
             'order_id' => $order->id,
             'installments' => max(1, $installments),
         ];
@@ -829,7 +889,7 @@ class UpsellController extends Controller
     /**
      * Monta payload de geração de PIX para upsell.
      */
-    private function buildUpsellPixPayload(Order $order, float $amount): array
+    private function buildUpsellPixPayload(Order $order, float $amount, string $offerType = 'upsell'): array
     {
         return [
             'transaction_type' => 'pix',
@@ -840,7 +900,7 @@ class UpsellController extends Controller
                 'document' => $order->customer_document,
                 'phone' => $order->customer_phone,
             ],
-            'description' => 'Upsell - Pedido #' . $order->id,
+            'description' => ucfirst($offerType) . ' - Pedido #' . $order->id,
             'order_id' => $order->id,
         ];
     }

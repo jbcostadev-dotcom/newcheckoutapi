@@ -1009,6 +1009,23 @@ class PaymentController extends Controller
 
         AbandonedCartController::markExpiredPaymentForOrder($order);
 
+        // The original order is already paid; an additional Pix has its own lifecycle.
+        if ($order->post_purchase_pix) {
+            $payment = $order->post_purchase_pix;
+            return response()->json([
+                'order_id' => $order->id,
+                'status' => $payment['status'],
+                'payment_method' => 'pix',
+                'pix_qrcode' => null,
+                'pix_copia_cola' => $payment['code'],
+                'gateway_expires_at' => $payment['expires_at'],
+                'created_at' => $payment['created_at'],
+                'total' => $payment['amount'],
+                'store_name' => $order->store?->name,
+                'has_upsell' => false,
+            ]);
+        }
+
         $hasUpsell = false;
         if (in_array($order->status, [Order::STATUS_PAID, Order::STATUS_AUTHORIZED], true)) {
             $hasUpsell = $this->hasApplicableUpsell($order, $order->store);
@@ -1058,6 +1075,10 @@ class PaymentController extends Controller
 
         if (! $transactionId) {
             return response()->json(['error' => 'Invalid payload: missing transaction id'], 400);
+        }
+
+        if (app(\App\Services\PostPurchasePixService::class)->handleWebhook((string) $transactionId, $status)) {
+            return response()->json(['received' => true]);
         }
 
         $order = Order::with('store')->where('gateway_transaction_id', (string) $transactionId)->first();
@@ -1468,6 +1489,7 @@ class PaymentController extends Controller
         $paymentMethod = $order->payment_method;
 
         $query = $store->upsells()
+            ->ofType('upsell')
             ->active()
             ->where(function ($q) use ($paymentMethod) {
                 if ($paymentMethod === 'credit_card') {

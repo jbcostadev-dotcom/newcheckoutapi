@@ -6,8 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class Upsell extends Model
 {
+    protected $attributes = [
+        'offer_type' => 'upsell',
+    ];
+
     protected $fillable = [
         'store_id',
+        'offer_type',
         'name',
         'product_id',
         'discount_value',
@@ -53,6 +58,11 @@ class Upsell extends Model
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
+    }
+
+    public function scopeOfType($query, string $type)
+    {
+        return $query->where('offer_type', $type);
     }
 
     /**

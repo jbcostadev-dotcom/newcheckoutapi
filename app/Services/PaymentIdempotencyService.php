@@ -184,7 +184,7 @@ class PaymentIdempotencyService
 
             $snapshot = $this->snapshot($record->fresh());
             $this->cachePut($cacheKey, $snapshot);
-            $this->propagateTerminalToSiblingUpsellIntents($record->fresh());
+            $this->propagateTerminalToSiblingOfferIntents($record->fresh());
 
             return response()->json($payload, $status, [
                 'Idempotency-Key-Accepted' => 'true',
@@ -318,23 +318,28 @@ class PaymentIdempotencyService
             ->whereIn('state', [PaymentIdempotency::STATE_PROCESSING, PaymentIdempotency::STATE_INDETERMINATE])
             ->get()
             ->each(function (PaymentIdempotency $record) use ($order) {
-                if (
-                    $record->scope === PaymentIdempotency::SCOPE_UPSELL
-                    && ! in_array($order->upsell_status, ['accepted', 'declined'], true)
-                ) {
+                $isOffer = in_array($record->scope, [
+                    PaymentIdempotency::SCOPE_UPSELL,
+                    PaymentIdempotency::SCOPE_DOWNSELL,
+                ], true);
+                $offerStatus = $record->scope === PaymentIdempotency::SCOPE_DOWNSELL
+                    ? $order->downsell_status
+                    : $order->upsell_status;
+
+                if ($isOffer && ! in_array($offerStatus, ['accepted', 'declined'], true)) {
                     return;
                 }
 
-                $failed = $record->scope === PaymentIdempotency::SCOPE_UPSELL
-                    ? $order->upsell_status !== 'accepted'
+                $failed = $isOffer
+                    ? $offerStatus !== 'accepted'
                     : in_array($order->status, [
                         Order::STATUS_FAILED,
                         Order::STATUS_REFUSED,
                         Order::STATUS_CANCELED,
                     ], true);
 
-                $payload = $record->scope === PaymentIdempotency::SCOPE_UPSELL
-                    ? $this->upsellResponse($order, ! $failed)
+                $payload = $isOffer
+                    ? $this->offerResponse($order, ! $failed)
                     : $this->checkoutResponse($order);
 
                 $record->update([
@@ -515,15 +520,18 @@ class PaymentIdempotencyService
         return $this->replayResponse($snapshot);
     }
 
-    private function propagateTerminalToSiblingUpsellIntents(PaymentIdempotency $source): void
+    private function propagateTerminalToSiblingOfferIntents(PaymentIdempotency $source): void
     {
-        if ($source->scope !== PaymentIdempotency::SCOPE_UPSELL || ! $source->order_id || ! $source->isTerminal()) {
+        if (! in_array($source->scope, [
+            PaymentIdempotency::SCOPE_UPSELL,
+            PaymentIdempotency::SCOPE_DOWNSELL,
+        ], true) || ! $source->order_id || ! $source->isTerminal()) {
             return;
         }
 
         PaymentIdempotency::query()
             ->where('order_id', $source->order_id)
-            ->where('scope', PaymentIdempotency::SCOPE_UPSELL)
+            ->where('scope', $source->scope)
             ->where('id', '!=', $source->id)
             ->whereIn('state', [PaymentIdempotency::STATE_PROCESSING, PaymentIdempotency::STATE_INDETERMINATE])
             ->get()
@@ -685,14 +693,15 @@ class PaymentIdempotencyService
         ];
     }
 
-    private function upsellResponse(Order $order, bool $success): array
+    private function offerResponse(Order $order, bool $success): array
     {
+        $pix = $order->post_purchase_pix;
         return [
             'success' => $success,
             'message' => $success ? null : 'A cobrança da oferta não foi aprovada.',
-            'pix_qrcode' => $order->pix_qrcode,
-            'pix_copia_cola' => $order->pix_copia_cola,
-            'gateway_expires_at' => $order->gateway_expires_at?->toISOString(),
+            'pix_qrcode' => $pix ? null : $order->pix_qrcode,
+            'pix_copia_cola' => $pix['code'] ?? $order->pix_copia_cola,
+            'gateway_expires_at' => $pix['expires_at'] ?? $order->gateway_expires_at?->toISOString(),
         ];
     }
 

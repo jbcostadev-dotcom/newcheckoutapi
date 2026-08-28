@@ -12,7 +12,7 @@ class PaymentIntentController extends Controller
     public function status(Request $request, PaymentIdempotencyService $idempotency)
     {
         $validated = $request->validate([
-            'scope' => 'required|in:checkout,upsell',
+            'scope' => 'required|in:checkout,upsell,downsell',
             'store_id' => 'nullable|integer|exists:stores,id|required_without:domain',
             'domain' => 'nullable|string|max:255|required_without:store_id',
         ]);
