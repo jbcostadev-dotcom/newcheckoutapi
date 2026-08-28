@@ -8,13 +8,25 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('checkout_settings', function (Blueprint $table) {
-            $table->string('downsell_bg_color')->default('#FFFFFF')->after('upsell_button_text_color');
-            $table->string('downsell_border_color')->default('#E2E8F0')->after('downsell_bg_color');
-            $table->string('downsell_text_color')->default('#1A1A1A')->after('downsell_border_color');
-            $table->string('downsell_button_color')->default('#22C55E')->after('downsell_text_color');
-            $table->string('downsell_button_text_color')->default('#FFFFFF')->after('downsell_button_color');
-        });
+        $previousColumn = 'upsell_button_text_color';
+
+        foreach ([
+            'downsell_bg_color' => '#FFFFFF',
+            'downsell_border_color' => '#E2E8F0',
+            'downsell_text_color' => '#1A1A1A',
+            'downsell_button_color' => '#22C55E',
+            'downsell_button_text_color' => '#FFFFFF',
+        ] as $column => $default) {
+            // A previous deployment may have created only some columns before failing.
+            // Keep existing definitions and saved colors; add only the missing fields.
+            if (! Schema::hasColumn('checkout_settings', $column)) {
+                Schema::table('checkout_settings', function (Blueprint $table) use ($column, $default, $previousColumn) {
+                    $table->string($column)->default($default)->after($previousColumn);
+                });
+            }
+
+            $previousColumn = $column;
+        }
     }
 
     public function down(): void
